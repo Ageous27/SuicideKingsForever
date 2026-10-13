@@ -1,0 +1,34 @@
+## Interface: 16001
+## Title: Suicide Kings Forever
+## Notes: Suicide Kings loot for WoW Forever
+## Version: 0.3.0
+## SavedVariables: SKDB
+## Author: Suicide Kings Forever
+
+Core/Namespace.lua
+Core/Saved.lua
+Core/Events.lua
+Core/Item.lua
+Core/Debug.lua
+State/List.lua
+State/Settings.lua
+State/History.lua
+State/Session.lua
+Rules/Priority.lua
+Rules/Placement.lua
+Rules/Reconcile.lua
+IO/Chat.lua
+IO/Sync.lua
+IO/Gargul.lua
+IO/Trade.lua
+IO/Roster.lua
+UI/Menu.lua
+UI/List.lua
+UI/Import.lua
+UI/Reconcile.lua
+UI/Rolls.lua
+UI/History.lua
+UI/Settings.lua
+UI/Popup.lua
+UI/LateJoin.lua
+UI/Gargul.lua
