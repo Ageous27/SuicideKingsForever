@@ -14,6 +14,12 @@ Suicide Kings Forever is a WoW Forever loot addon that keeps one Suicide Kings l
 - Gargul compatibility when both addons are installed
 - A background opacity slider for SKF windows on this character
 
+## Screenshots
+
+![Locked list](docs/list.png)
+
+![Rolls window and the raider popup](docs/rolls.png)
+
 ## Usage
 
 Install the `SuicideKingsForever` folder in `Interface\AddOns` and `/reload`. Commands are `/sk`, `/skf`, and `/suicidekings`.
