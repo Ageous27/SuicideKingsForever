@@ -80,6 +80,134 @@ function SK.Settings:SetAutoQuality(quality)
 	SK.Events:Fire("SK_SETTINGS")
 end
 
+local STATUS_KEY = {
+	["Bench"] = "bench",
+	["Absent"] = "absent",
+	["No-call/no-show"] = "nocall",
+}
+
+local function statusFallback(status)
+	if status == "Bench" then
+		return "raise", 1
+	end
+	if status == "No-call/no-show" then
+		return "demote", 1
+	end
+	return "hold", 1
+end
+
+function SK.Settings:StatusRule(status)
+	local key = STATUS_KEY[status]
+	if not key then
+		return nil, 0
+	end
+	local settings = self:Get()
+	local mode = settings[key .. "Mode"]
+	local steps = math.floor(tonumber(settings[key .. "Steps"]) or 1)
+	if mode ~= "hold" and mode ~= "raise" and mode ~= "demote" then
+		mode, steps = statusFallback(status)
+	end
+	if steps < 1 then
+		steps = 1
+	elseif steps > 20 then
+		steps = 20
+	end
+	return mode, steps
+end
+
+function SK.Settings:SetStatusRule(status, mode, steps)
+	if not SK.Session:IsOfficer() then
+		return
+	end
+	local key = STATUS_KEY[status]
+	if not key then
+		return
+	end
+	if mode ~= "hold" and mode ~= "raise" and mode ~= "demote" then
+		mode = statusFallback(status)
+	end
+	steps = math.floor(tonumber(steps) or 1)
+	if steps < 1 then
+		steps = 1
+	elseif steps > 20 then
+		steps = 20
+	end
+	local settings = self:Get()
+	settings[key .. "Mode"] = mode
+	settings[key .. "Steps"] = steps
+	SK.Events:Fire("SK_SETTINGS")
+end
+
+function SK.Settings:PackStatusRules()
+	local function one(status)
+		local mode, steps = self:StatusRule(status)
+		local flag = "r"
+		if mode == "hold" then
+			flag = "h"
+		elseif mode == "demote" then
+			flag = "d"
+		end
+		return flag .. tostring(steps)
+	end
+	return one("Bench") .. "." .. one("Absent") .. "." .. one("No-call/no-show")
+end
+
+function SK.Settings:ApplyStatusRules(text)
+	if type(text) ~= "string" then
+		return
+	end
+	local bench, absent, nocall = string.match(text, "^([rhd]%d+)%.([rhd]%d+)%.([rhd]%d+)$")
+	if not bench then
+		return
+	end
+	local function write(status, token)
+		local flag = string.sub(token, 1, 1)
+		local mode = "raise"
+		if flag == "h" then
+			mode = "hold"
+		elseif flag == "d" then
+			mode = "demote"
+		end
+		local key = STATUS_KEY[status]
+		local steps = math.floor(tonumber(string.sub(token, 2)) or 1)
+		if steps < 1 then
+			steps = 1
+		elseif steps > 20 then
+			steps = 20
+		end
+		local settings = self:Get()
+		settings[key .. "Mode"] = mode
+		settings[key .. "Steps"] = steps
+	end
+	write("Bench", bench)
+	write("Absent", absent)
+	write("No-call/no-show", nocall)
+end
+
+function SK.Settings:AwaySeconds()
+	local minutes = math.floor(tonumber(self:Get().awayMinutes) or 10)
+	if minutes < 1 then
+		minutes = 1
+	elseif minutes > 120 then
+		minutes = 120
+	end
+	return minutes * 60
+end
+
+function SK.Settings:SetAwayMinutes(minutes)
+	if not SK.Session:IsOfficer() then
+		return
+	end
+	minutes = math.floor(tonumber(minutes) or 10)
+	if minutes < 1 then
+		minutes = 1
+	elseif minutes > 120 then
+		minutes = 120
+	end
+	self:Get().awayMinutes = minutes
+	SK.Events:Fire("SK_SETTINGS")
+end
+
 function SK.Settings:SetOpacity(alpha)
 	alpha = tonumber(alpha) or 1
 	if alpha < 0 then
@@ -91,16 +219,22 @@ function SK.Settings:SetOpacity(alpha)
 end
 
 function SK.Settings:Reset()
-	if not SK.Session:IsOfficer() then
-		return "Officer only"
-	end
 	local settings = self:Get()
-	settings.bidDrop = "last"
-	settings.timer = 15
-	settings.countdown = 5
-	settings.disenchanter = ""
-	settings.autoAdd = false
-	settings.autoQuality = 2
+	if SK.Session:IsOfficer() then
+		settings.bidDrop = "last"
+		settings.timer = 15
+		settings.countdown = 5
+		settings.disenchanter = ""
+		settings.autoAdd = true
+		settings.autoQuality = 2
+		settings.benchMode = "raise"
+		settings.benchSteps = 1
+		settings.absentMode = "hold"
+		settings.absentSteps = 1
+		settings.nocallMode = "demote"
+		settings.nocallSteps = 1
+		settings.awayMinutes = 10
+	end
 	settings.opacity = 1
 	if SK.UI and SK.UI.ResetLayout then
 		SK.UI:ResetLayout()
@@ -109,7 +243,7 @@ function SK.Settings:Reset()
 	return nil
 end
 
-function SK.Settings:ApplyRemote(drop, timer, countdown, disenchanter, autoAdd, autoQuality)
+function SK.Settings:ApplyRemote(drop, timer, countdown, disenchanter, autoAdd, autoQuality, statusRules, awayMinutes)
 	if SK.Session:IsOfficer() then
 		return
 	end
@@ -125,6 +259,18 @@ function SK.Settings:ApplyRemote(drop, timer, countdown, disenchanter, autoAdd, 
 	end
 	if autoQuality ~= nil then
 		settings.autoQuality = tonumber(autoQuality) or settings.autoQuality or 2
+	end
+	if statusRules ~= nil then
+		self:ApplyStatusRules(statusRules)
+	end
+	if awayMinutes ~= nil and awayMinutes ~= "" then
+		local minutes = math.floor(tonumber(awayMinutes) or 10)
+		if minutes < 1 then
+			minutes = 1
+		elseif minutes > 120 then
+			minutes = 120
+		end
+		settings.awayMinutes = minutes
 	end
 	SK.Events:Fire("SK_SETTINGS")
 end

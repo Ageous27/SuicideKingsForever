@@ -2,16 +2,45 @@ local frame = SK.UI:CreateWindow("import", "Import")
 local body = frame.body
 
 local help = body:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-help:SetPoint("TOPLEFT", 4, 0)
-help:SetPoint("TOPRIGHT", -4, 0)
+help:SetPoint("TOPLEFT", 4, -28)
+help:SetPoint("TOPRIGHT", -4, -28)
 help:SetJustifyH("LEFT")
 help:SetWordWrap(true)
 help:SetHeight(32)
-help:SetText("Paste Position, Name, Class. Tabs or commas both work. Export makes a Discord code block. Merge with blank positions adds new names at the bottom. Replace with no positions starts seeding.")
+help:SetText("Paste one name per line. Position and class are optional. A first name fills in the last name and class from the raid. Tabs or commas both work. Export names the team and the list, then makes a Discord code block. Merge with blank positions adds new names at the bottom. Replace with no positions starts seeding.")
+
+local importList = CreateFrame("Button", nil, body, "UIPanelButtonTemplate")
+importList:SetSize(180, 22)
+importList:SetPoint("TOPRIGHT", -4, 0)
+importList:SetText("Main")
+importList:SetScript("OnClick", function(self)
+	local rows = {}
+	local lists = SK.Teams:Lists()
+	for i = 1, #lists do
+		local entry = lists[i]
+		table.insert(rows, {
+			label = entry.name,
+			fn = function()
+				local err = SK.Teams:SelectList(entry.id)
+				if err then
+					SK.Print(err)
+				end
+				importList:SetText(SK.Teams:ListName())
+			end,
+		})
+	end
+	SK.UI:Pick(self, rows)
+end)
+
+local importTeam = body:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+importTeam:SetPoint("TOPLEFT", 4, -2)
+importTeam:SetPoint("RIGHT", importList, "LEFT", -8, 0)
+importTeam:SetJustifyH("LEFT")
+importTeam:SetText("Team")
 
 local editBack = CreateFrame("Frame", nil, body, "BackdropTemplate")
-editBack:SetPoint("TOPLEFT", 4, -36)
-editBack:SetPoint("TOPRIGHT", -4, -36)
+editBack:SetPoint("TOPLEFT", 4, -64)
+editBack:SetPoint("TOPRIGHT", -4, -64)
 editBack:SetHeight(168)
 editBack:SetBackdrop({
 	bgFile = "Interface\\Buttons\\WHITE8X8",
@@ -449,9 +478,19 @@ frame:SetScript("OnShow", function()
 		SK.Print("Import stays with the officer.")
 		return
 	end
+	if SK.Teams then
+		importTeam:SetText(SK.Teams:TeamName())
+		importList:SetText(SK.Teams:ListName())
+	end
 	fitEdit()
 	showPreview()
 	raiseFooter()
+end)
+SK.Events:On("SK_LIST_CHANGED", function()
+	if frame:IsShown() and SK.Teams then
+		importTeam:SetText(SK.Teams:TeamName())
+		importList:SetText(SK.Teams:ListName())
+	end
 end)
 frame:SetScript("OnHide", function()
 	if not replacing then

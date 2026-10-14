@@ -358,28 +358,36 @@ removeMenu:SetBackdrop({
 removeMenu:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
 removeMenu:SetBackdropBorderColor(0.75, 0.62, 0.28, 1)
 
-local removeWord = CreateFrame("Button", nil, removeMenu)
-removeWord:SetPoint("TOPLEFT", 4, -3)
-removeWord:SetPoint("BOTTOMRIGHT", -4, 3)
-local removeText = removeWord:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-removeText:SetAllPoints()
-removeText:SetJustifyH("CENTER")
-removeText:SetText("Remove")
-removeText:SetTextColor(1, 1, 1)
-local removeHi = removeWord:CreateTexture(nil, "BACKGROUND")
-removeHi:SetAllPoints()
-if removeHi.SetColorTexture then
-	removeHi:SetColorTexture(1, 0.82, 0, 0.2)
+local menuButtons = {}
+
+local function menuButton(index)
+	local button = menuButtons[index]
+	if button then
+		return button
+	end
+	button = CreateFrame("Button", nil, removeMenu)
+	button:SetHeight(20)
+	button.text = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	button.text:SetPoint("LEFT", 8, 0)
+	button.text:SetPoint("RIGHT", -6, 0)
+	button.text:SetJustifyH("LEFT")
+	button.hi = button:CreateTexture(nil, "BACKGROUND")
+	button.hi:SetAllPoints()
+	if button.hi.SetColorTexture then
+		button.hi:SetColorTexture(1, 0.82, 0, 0.16)
+	end
+	button.hi:Hide()
+	button:SetScript("OnEnter", function(self)
+		self.hi:Show()
+		self.text:SetTextColor(1, 0.82, 0)
+	end)
+	button:SetScript("OnLeave", function(self)
+		self.hi:Hide()
+		self.text:SetTextColor(self.baseR or 1, self.baseG or 1, self.baseB or 1)
+	end)
+	menuButtons[index] = button
+	return button
 end
-removeHi:Hide()
-removeWord:SetScript("OnEnter", function()
-	removeHi:Show()
-	removeText:SetTextColor(1, 0.82, 0)
-end)
-removeWord:SetScript("OnLeave", function()
-	removeHi:Hide()
-	removeText:SetTextColor(1, 1, 1)
-end)
 
 local function hideRemoveMenu()
 	pendingRemove = nil
@@ -389,6 +397,74 @@ end
 
 local function showRemoveMenu(kind, item)
 	pendingRemove = { kind = kind, id = item.id }
+	local entries = {}
+	if kind == "waiting" and SK.Teams then
+		local lists = SK.Teams:Lists()
+		if #lists > 1 then
+			for i = 1, #lists do
+				local entry = lists[i]
+				table.insert(entries, {
+					label = entry.name,
+					selected = item.listId == entry.id,
+					fn = function()
+						item.listId = entry.id
+						item.listName = entry.name
+						item.listPick = true
+						refresh()
+					end,
+				})
+			end
+		end
+	end
+	table.insert(entries, {
+		label = "Remove",
+		remove = true,
+		fn = function()
+			local err
+			if kind == "trade" then
+				err = SK.Session:RemoveNeedsTrade(item.id)
+			else
+				err = SK.Session:RemoveWaiting(item.id)
+			end
+			if err then
+				message = err
+				refresh()
+			end
+		end,
+	})
+	local width = 120
+	for i = 1, #entries do
+		local button = menuButton(i)
+		local label = entries[i].label
+		if #label > 18 then
+			width = 180
+		end
+		button:SetWidth(width)
+		button:ClearAllPoints()
+		button:SetPoint("TOPLEFT", 4, -4 - (i - 1) * 22)
+		button.text:SetText(label)
+		if entries[i].remove then
+			button.baseR, button.baseG, button.baseB = 1, 0.45, 0.4
+		elseif entries[i].selected then
+			button.baseR, button.baseG, button.baseB = 1, 0.82, 0
+		else
+			button.baseR, button.baseG, button.baseB = 1, 1, 1
+		end
+		button.text:SetTextColor(button.baseR, button.baseG, button.baseB)
+		button.hi:Hide()
+		local fn = entries[i].fn
+		button:SetScript("OnClick", function()
+			hideRemoveMenu()
+			if fn then
+				fn()
+			end
+		end)
+		button:Show()
+	end
+	for i = #entries + 1, #menuButtons do
+		menuButtons[i]:Hide()
+	end
+	removeMenu:SetSize(width + 8, 8 + #entries * 22)
 	local x, y = GetCursorPosition()
 	local scale = UIParent:GetEffectiveScale()
 	removeMenu:ClearAllPoints()
@@ -409,24 +485,6 @@ removeMenu:SetScript("OnUpdate", function(self)
 	end
 	if (IsMouseButtonDown("LeftButton") or IsMouseButtonDown("RightButton")) and not self:IsMouseOver() then
 		hideRemoveMenu()
-	end
-end)
-
-removeWord:SetScript("OnClick", function()
-	local pending = pendingRemove
-	hideRemoveMenu()
-	if not pending then
-		return
-	end
-	local err
-	if pending.kind == "trade" then
-		err = SK.Session:RemoveNeedsTrade(pending.id)
-	else
-		err = SK.Session:RemoveWaiting(pending.id)
-	end
-	if err then
-		message = err
-		refresh()
 	end
 end)
 
@@ -451,9 +509,21 @@ function refresh()
 	end
 	for i = 1, #waiting do
 		local item = waiting[i]
+		if SK.Teams then
+			SK.Teams:Assign(item)
+		end
 		local button = lineButton(waitingButtons, waitingContent, i, 220)
 		button.entry = item
-		button.label:SetText(SK.Item.ChatLink(item))
+		local many = SK.Teams and #SK.Teams:Lists() > 1
+		local listLabel = many and item.listName or ""
+		button.label:ClearAllPoints()
+		button.label:SetPoint("LEFT", 6, 0)
+		button.label:SetPoint("RIGHT", -6, 0)
+		if listLabel and listLabel ~= "" then
+			button.label:SetText(SK.Item.ChatLink(item) .. "   " .. listLabel)
+		else
+			button.label:SetText(SK.Item.ChatLink(item))
+		end
 		button.label:SetTextColor(1, 1, 1)
 		paint(button, item.id == selected)
 		button:SetScript("OnClick", function(_, mouse)
@@ -480,6 +550,9 @@ function refresh()
 		local item = trades[i]
 		local button = lineButton(tradeButtons, tradeContent, i, 220)
 		button.entry = item
+		button.label:ClearAllPoints()
+		button.label:SetPoint("LEFT", 6, 0)
+		button.label:SetPoint("RIGHT", -6, 0)
 		button.label:SetText(SK.Item.ChatLink(item) .. "    " .. (item.winner or ""))
 		button.label:SetTextColor(1, 1, 1)
 		paint(button, false)
@@ -547,9 +620,20 @@ function refresh()
 		hideFrom(liveButtons, #ordered + 1)
 		liveContent:SetWidth(420)
 		liveContent:SetHeight(math.max(18, #ordered * 18))
+		local many = SK.Teams and #SK.Teams:Lists() > 1
+		local listLabel = many and live.listName or ""
+		if listLabel == "" then
+			listLabel = nil
+		end
 		if collecting then
 			local remain = math.max(0, math.ceil((live.endsAt or 0) - time()))
-			timerText:SetText("Timer " .. remain .. "s")
+			if listLabel then
+				timerText:SetText(listLabel .. "  " .. remain .. "s")
+			else
+				timerText:SetText("Timer " .. remain .. "s")
+			end
+		elseif listLabel then
+			timerText:SetText(listLabel .. "  closed")
 		else
 			timerText:SetText("Timer closed")
 		end
@@ -565,7 +649,12 @@ function refresh()
 			note:SetText("/sk or /skf opens this window. Alt-click an item, or shift-click one into the add box. Right-click a row, then click Remove.")
 		end
 	end
-	startBtn:SetEnabled(officer and not live and SK.Session:Selected() ~= nil)
+	local selectedItem = SK.Session:Selected()
+	if selectedItem and SK.Teams then
+		SK.Teams:Assign(selectedItem)
+	end
+	local listReady = (not selectedItem) or selectedItem.listId
+	startBtn:SetEnabled(officer and not live and selectedItem ~= nil and listReady)
 	endBtn:SetEnabled(officer and not not collecting)
 	awardBtn:SetEnabled(officer and live and not collecting and chosen ~= nil)
 	deBtn:SetEnabled(officer and live and not collecting)
@@ -852,6 +941,13 @@ SK.Events:On("SK_READY", refresh)
 SK.Events:On("SK_SESSION", function()
 	message = ""
 	refresh()
+end)
+pcall(function()
+	SK.Events:Register("GET_ITEM_INFO_RECEIVED", function()
+		if frame:IsShown() then
+			refresh()
+		end
+	end)
 end)
 frame:SetScript("OnHide", hideRemoveMenu)
 frame:SetScript("OnShow", function()

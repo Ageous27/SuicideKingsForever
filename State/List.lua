@@ -8,15 +8,22 @@ local function clear(list)
 end
 
 local function touch(action, name, detail)
+	if SK.Teams then
+		SK.Teams:Flush()
+	end
 	SK.List:RebuildIndex()
 	SK.Session:RefreshSeeding()
-	SK.History:Append({
+	local event = {
 		type = "edit",
 		action = action,
 		name = name,
 		detail = detail,
 		officer = UnitName("player"),
-	})
+	}
+	if SK.Teams then
+		SK.Teams:Stamp(event)
+	end
+	SK.History:Append(event)
 	SK.Events:Fire("SK_LIST_CHANGED", action)
 end
 
@@ -199,7 +206,9 @@ function SK.List:ReplaceCore(rows)
 end
 
 function SK.List:ExportDiscord()
-	local lines = { "```", "Position\tName\tClass" }
+	local team = SK.Teams and SK.Teams:TeamName() or ""
+	local listName = SK.Teams and SK.Teams:ListName() or ""
+	local lines = { "```", "# " .. team .. " / " .. listName, "Position\tName\tClass" }
 	local core = self:Core()
 	for i = 1, #core do
 		local row = core[i]
@@ -274,8 +283,20 @@ function SK.List:PlanMerge(incoming)
 				class = row.class,
 				position = position,
 				status = nil,
+				rolls = nil,
+				hold = false,
 				pug = false,
 			})
+			local person = SK.Teams and SK.Teams:Person(row.name)
+			if person and not person.pug then
+				local added = core[#core]
+				added.status = person.status
+				added.rolls = person.rolls
+				added.hold = person.hold
+				if person.class and person.class ~= "" then
+					added.class = row.class or person.class
+				end
+			end
 			byName[string.lower(row.name)] = core[#core]
 		end
 	end
@@ -298,6 +319,9 @@ function SK.List:ApplySnapshot(rows)
 	clear(list)
 	for i = 1, #rows do
 		table.insert(list, rows[i])
+	end
+	if SK.Teams then
+		SK.Teams:Flush()
 	end
 	self:RebuildIndex()
 	SK.Session:RefreshSeeding()
@@ -425,6 +449,13 @@ function SK.List:Insert(name, class)
 	end
 	local list = SK.Saved:List()
 	local row = { name = name, class = className, position = nil, status = nil, pug = false }
+	local person = SK.Teams and SK.Teams:Person(name)
+	if person and not person.pug then
+		row.status = person.status
+		row.rolls = person.rolls
+		row.hold = person.hold
+		row.class = person.class or className
+	end
 	local seeding = SK.Session:IsSeeding()
 	if not seeding then
 		local coreCount = #self:Core()
@@ -517,6 +548,10 @@ function SK.List:AddPug(name, class)
 	if self:Find(name) then
 		return "That name is already on the list."
 	end
+	local person = SK.Teams and SK.Teams:Person(name)
+	if person and not person.pug then
+		return "That name is already on this team."
+	end
 	local className = SK.ClassName(class)
 	if not className then
 		return "Unknown class."
@@ -536,6 +571,10 @@ end
 
 function SK.List:AddPugQuiet(name, class)
 	if self:Find(name) then
+		return false
+	end
+	local person = SK.Teams and SK.Teams:Person(name)
+	if person and not person.pug then
 		return false
 	end
 	local className = SK.ClassName(class) or "Warrior"
@@ -592,6 +631,11 @@ function SK.List:EndRaid()
 	if SK.Session.Unlock then
 		SK.Session:Unlock()
 	end
+	local session = SK.Saved:Session()
+	session.raidId = nil
+	session.awaySince = nil
+	session.raidSawGroup = nil
+	session.raidOfficer = nil
 	touch("endraid", nil, table.concat(dropped, ", "))
 	return nil
 end

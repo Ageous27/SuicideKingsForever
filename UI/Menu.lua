@@ -8,7 +8,7 @@ SK.UI.entries = {
 	{ id = "import", label = "Import", officer = true },
 	{ id = "rolls", label = "Rolls", officer = true },
 	{ id = "history", label = "History", officer = false },
-	{ id = "settings", label = "Settings", officer = true },
+	{ id = "settings", label = "Settings", officer = false },
 }
 
 local GROUP = {
@@ -54,10 +54,9 @@ function SK.UI:ResetLayout()
 end
 
 function SK.UI:Opacity()
-	local settings = SK.Settings and SK.Settings:Get()
-	local alpha = settings and tonumber(settings.opacity)
-	if not alpha then
-		alpha = 1
+	local alpha = 1
+	if type(SKDB) == "table" and type(SKDB.settings) == "table" then
+		alpha = tonumber(SKDB.settings.opacity) or 1
 	end
 	if alpha < 0 then
 		alpha = 0
@@ -68,14 +67,24 @@ function SK.UI:Opacity()
 end
 
 function SK.UI:Paint(frame)
-	if not frame or not frame.SetBackdropColor then
+	if not frame or not frame.GetRegions then
 		return
 	end
-	local alpha = self:Opacity()
-	frame:SetBackdropColor(1, 1, 1, alpha)
-	if frame.SetBackdropBorderColor then
-		frame:SetBackdropBorderColor(1, 1, 1, alpha)
+	if not frame.skfShade then
+		local shade = frame:CreateTexture(nil, "BACKGROUND")
+		shade:SetDrawLayer("BACKGROUND", 7)
+		shade:SetColorTexture(0.07, 0.07, 0.07, 1)
+		shade:SetAllPoints()
+		frame.skfShade = shade
 	end
+	local regions = { frame:GetRegions() }
+	for i = 1, #regions do
+		local region = regions[i]
+		if region ~= frame.skfShade and region.GetDrawLayer and region.SetAlpha and region:GetDrawLayer() == "BACKGROUND" then
+			region:SetAlpha(0)
+		end
+	end
+	frame.skfShade:SetAlpha(self:Opacity())
 end
 
 function SK.UI:ApplyOpacity()
@@ -300,11 +309,117 @@ SlashCmdList.SKF = function(msg)
 	local id = page[msg] or "list"
 	local entryOfficer = {
 		import = true,
-		settings = true,
 	}
 	if entryOfficer[id] and not SK.Session:IsOfficer() then
 		SK.Print(SK.UI.titles[id] .. " stays with the officer.")
 		return
 	end
 	SK.UI:Toggle(id)
+end
+
+local pick
+
+function SK.UI:Pick(anchor, rows, maxLines)
+	if not pick then
+		pick = CreateFrame("Frame", "SKFPick", UIParent, "BackdropTemplate")
+		pick:SetFrameStrata("DIALOG")
+		pick:SetClampedToScreen(true)
+		pick:SetBackdrop({
+			bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+			edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+			tile = true,
+			tileSize = 32,
+			edgeSize = 24,
+			insets = { left = 6, right = 6, top = 6, bottom = 6 },
+		})
+		pick.buttons = {}
+		local scroll = CreateFrame("ScrollFrame", nil, pick)
+		scroll:SetPoint("TOPLEFT", 8, -8)
+		scroll:SetPoint("BOTTOMRIGHT", -8, 8)
+		scroll:EnableMouseWheel(true)
+		local content = CreateFrame("Frame", nil, scroll)
+		content:SetSize(20, 20)
+		scroll:SetScrollChild(content)
+		pick.scrollFrame = scroll
+		pick.content = content
+		pick:SetScript("OnUpdate", function(self)
+			if not self:IsShown() then
+				return
+			end
+			local down = IsMouseButtonDown("LeftButton") or IsMouseButtonDown("RightButton")
+			if down then
+				if not self.down then
+					self.down = true
+					if not self:IsMouseOver() and not (self.anchor and self.anchor:IsMouseOver()) then
+						self:Hide()
+					end
+				end
+			else
+				self.down = false
+			end
+		end)
+		pick:Hide()
+	end
+	if pick:IsShown() and pick.anchor == anchor then
+		pick:Hide()
+		return
+	end
+	local width = math.max(anchor:GetWidth() or 160, 180)
+	local function onWheel(_, delta)
+		local scrollFrame = pick.scrollFrame
+		local maxScroll = math.max(0, pick.content:GetHeight() - scrollFrame:GetHeight())
+		local nextValue = scrollFrame:GetVerticalScroll() - delta * 22
+		if nextValue < 0 then
+			nextValue = 0
+		elseif nextValue > maxScroll then
+			nextValue = maxScroll
+		end
+		scrollFrame:SetVerticalScroll(nextValue)
+	end
+	for i = 1, #rows do
+		local button = pick.buttons[i]
+		if not button then
+			button = CreateFrame("Button", nil, pick.content, "UIPanelButtonTemplate")
+			pick.buttons[i] = button
+		end
+		button:SetSize(width, 20)
+		button:ClearAllPoints()
+		button:SetPoint("TOPLEFT", 0, -(i - 1) * 22)
+		button:SetText(rows[i].label)
+		local fn = rows[i].fn
+		button:SetScript("OnClick", function()
+			pick:Hide()
+			if fn then
+				fn()
+			end
+		end)
+		button:EnableMouseWheel(true)
+		button:SetScript("OnMouseWheel", onWheel)
+		button:Show()
+	end
+	for i = #rows + 1, #pick.buttons do
+		pick.buttons[i]:Hide()
+	end
+	local cap = maxLines or math.floor(264 / 22)
+	if cap < 1 then
+		cap = 1
+	end
+	local visible = #rows
+	if visible > cap then
+		visible = cap
+	end
+	if visible < 1 then
+		visible = 1
+	end
+	pick.content:SetSize(width, math.max(22, #rows * 22))
+	pick:SetSize(width + 16, 16 + visible * 22)
+	pick.scrollFrame:SetVerticalScroll(0)
+	pick.scrollFrame:SetScript("OnMouseWheel", onWheel)
+	pick.anchor = anchor
+	pick.down = true
+	pick:ClearAllPoints()
+	pick:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
+	pick:EnableMouseWheel(true)
+	pick:SetScript("OnMouseWheel", onWheel)
+	pick:Show()
 end

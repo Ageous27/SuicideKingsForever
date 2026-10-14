@@ -13,6 +13,84 @@ local function unwrapCodeBlock(text)
 	return table.concat(kept, "\n")
 end
 
+local function splitLine(line)
+	local sep = ","
+	if string.find(line, "\t", 1, true) then
+		sep = "\t"
+	end
+	local fields = {}
+	local start = 1
+	local len = string.len(line)
+	while start <= len do
+		local found = string.find(line, sep, start, true)
+		if not found then
+			table.insert(fields, SK.Trim(string.sub(line, start)))
+			break
+		end
+		table.insert(fields, SK.Trim(string.sub(line, start, found - 1)))
+		start = found + 1
+		if start > len then
+			table.insert(fields, "")
+		end
+	end
+	return fields, sep
+end
+
+local function headerLine(fields)
+	local first = string.lower(fields[1] or "")
+	local second = string.lower(fields[2] or "")
+	if #fields == 1 then
+		return first == "name" or first == "position" or first == "class"
+	end
+	if first == "position" and second == "name" then
+		return true
+	end
+	if first == "name" and second == "class" then
+		return true
+	end
+	return false
+end
+
+local function finishRow(rows, errors, lineNo, pos, name, class)
+	name = SK.Trim(name)
+	class = SK.Trim(class)
+	pos = SK.Trim(pos)
+	if name == "" then
+		table.insert(errors, "Line " .. lineNo .. " needs a name.")
+		return
+	end
+	local className = nil
+	if class ~= "" then
+		className = SK.ClassName(class)
+		if not className then
+			table.insert(errors, "Line " .. lineNo .. " has an unknown class.")
+			return
+		end
+	end
+	local position = nil
+	if pos ~= "" then
+		position = tonumber(pos)
+		if not position or position < 1 or position ~= math.floor(position) then
+			table.insert(errors, "Line " .. lineNo .. " has a bad position.")
+			return
+		end
+	end
+	if SK.Roster and SK.Roster.Resolve then
+		local full, raidClass, err = SK.Roster:Resolve(name)
+		if err then
+			table.insert(errors, "Line " .. lineNo .. " matches more than one raider.")
+			return
+		end
+		if full then
+			name = full
+		end
+		if not className and raidClass then
+			className = raidClass
+		end
+	end
+	table.insert(rows, { name = name, class = className or "", position = position })
+end
+
 function SK.Rules.Placement.ParseCSV(text)
 	local rows = {}
 	local errors = {}
@@ -21,36 +99,30 @@ function SK.Rules.Placement.ParseCSV(text)
 		lineNo = lineNo + 1
 		line = SK.Trim(line)
 		if line ~= "" and string.sub(line, 1, 1) ~= "#" then
-			local pos, name, class
-			if string.find(line, "\t", 1, true) then
-				pos, name, class = string.match(line, "^([^\t]*)\t([^\t]*)\t(.*)$")
-			else
-				pos, name, class = string.match(line, "^([^,]*),([^,]*),(.*)$")
-			end
-			pos = SK.Trim(pos)
-			name = SK.Trim(name)
-			class = SK.Trim(class)
-			local isHeader = string.lower(pos) == "position" and string.lower(name) == "name"
-			if not isHeader and name ~= "" then
-				local className = SK.ClassName(class)
-				local position
-				pos = SK.Trim(pos)
-				if name == "" then
-					table.insert(errors, "Line " .. lineNo .. " has no name.")
-				elseif not className then
-					table.insert(errors, "Line " .. lineNo .. " has an unknown class.")
-				elseif pos ~= "" then
-					position = tonumber(pos)
-					if not position or position < 1 or position ~= math.floor(position) then
-						table.insert(errors, "Line " .. lineNo .. " has a bad position.")
+			local fields, sep = splitLine(line)
+			if not headerLine(fields) then
+				local pos, name, class = "", "", ""
+				if #fields >= 3 then
+					pos = fields[1]
+					name = fields[2]
+					class = table.concat(fields, sep, 3)
+				elseif #fields == 2 then
+					local position = tonumber(fields[1])
+					if position and position >= 1 and position == math.floor(position) then
+						pos = fields[1]
+						name = fields[2]
+					elseif SK.ClassName(fields[2]) then
+						name = fields[1]
+						class = fields[2]
+					elseif fields[1] == "" then
+						name = fields[2]
 					else
-						table.insert(rows, { name = name, class = className, position = position })
+						name = SK.Trim(fields[1] .. " " .. fields[2])
 					end
 				else
-					table.insert(rows, { name = name, class = className, position = nil })
+					name = fields[1] or ""
 				end
-			elseif not isHeader then
-				table.insert(errors, "Line " .. lineNo .. " needs Position,Name,Class.")
+				finishRow(rows, errors, lineNo, pos, name, class)
 			end
 		end
 	end

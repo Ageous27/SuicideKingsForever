@@ -8,9 +8,16 @@ local DEFAULTS = {
 		timer = 15,
 		countdown = 5,
 		disenchanter = "",
-		autoAdd = false,
+		autoAdd = true,
 		autoQuality = 2,
 		opacity = 1,
+		benchMode = "raise",
+		benchSteps = 1,
+		absentMode = "hold",
+		absentSteps = 1,
+		nocallMode = "demote",
+		nocallSteps = 1,
+		awayMinutes = 10,
 	},
 	history = {
 		events = {},
@@ -42,6 +49,9 @@ function SK.Saved:Init()
 		SKDB = {}
 	end
 	fill(SKDB, DEFAULTS)
+	if SK.Teams then
+		SK.Teams:Ensure()
+	end
 	if SK.List then
 		SK.List:RebuildIndex()
 	end

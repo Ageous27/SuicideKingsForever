@@ -24,7 +24,7 @@ Suicide Kings Forever is a WoW Forever loot addon that keeps one Suicide Kings l
 
 Install the `SuicideKingsForever` folder in `Interface\AddOns` and `/reload`. Commands are `/sk`, `/skf`, and `/suicidekings`.
 
-The officer is the master looter when loot is set to master looter. Otherwise the officer is the raid or party leader. Out of a group, you are the officer. Raiders see List and History. The officer also sees Import, Rolls, and Settings.
+The officer is the master looter when loot is set to master looter. Otherwise the officer is the raid or party leader. Out of a group, you are the officer. Raiders see List, History, and Settings. The officer also sees Import and Rolls.
 
 ### List and reconcile
 
@@ -70,7 +70,7 @@ If Gargul is also installed and you are made master looter, SKF asks whether thi
 
 ### Settings
 
-Settings is on the officer dropdown, after History. There is no separate slash command.
+Settings is on the dropdown for everyone, after History. `/sk settings` opens it. Bid drop, the timer, the countdown, the disenchanter, auto add, and clear list stay with the officer. Background opacity, window positions, and clear history stay on this character.
 
 - Bid drop: last place, or immediately below the lowest other bidder
 - Roll timer, default 15 seconds, and countdown, default 5 seconds

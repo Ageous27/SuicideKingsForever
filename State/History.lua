@@ -42,7 +42,7 @@ local function cell(value)
 end
 
 function SK.History:ExportDiscord()
-	local lines = { "```", "id\ttime\ttype\taction\tname\tdetail\titem\troll\tpositionBefore\tpositionAfter\tofficer\tdelivered" }
+	local lines = { "```", "id\ttime\ttype\taction\tname\tdetail\titem\troll\tpositionBefore\tpositionAfter\tofficer\tdelivered\tteamId\tteamName\tlistId\tlistName" }
 	local events = self:Events()
 	for i = 1, #events do
 		local event = events[i]
@@ -59,10 +59,29 @@ function SK.History:ExportDiscord()
 			cell(event.positionAfter),
 			cell(event.officer),
 			event.delivered and "1" or "0",
+			cell(event.teamId),
+			cell(event.teamName),
+			cell(event.listId),
+			cell(event.listName),
 		}, "\t"))
 	end
 	table.insert(lines, "```")
 	return table.concat(lines, "\n")
+end
+
+local function splitTabs(line)
+	local out = {}
+	local rest = line
+	while true do
+		local at = string.find(rest, "\t", 1, true)
+		if not at then
+			table.insert(out, rest)
+			break
+		end
+		table.insert(out, string.sub(rest, 1, at - 1))
+		rest = string.sub(rest, at + 1)
+	end
+	return out
 end
 
 function SK.History:Parse(text)
@@ -74,26 +93,34 @@ function SK.History:Parse(text)
 		lineNo = lineNo + 1
 		local trimmed = SK.Trim(line)
 		if trimmed ~= "" and string.sub(trimmed, 1, 1) ~= "#" then
-			local id, when, eventType, action, name, detail, item, roll, beforePos, afterPos, officer, delivered = string.match(trimmed, "^([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)$")
+			local fields = splitTabs(trimmed)
+			local id = fields[1]
+			local when = fields[2]
 			local header = string.lower(id or "") == "id" and string.lower(when or "") == "time"
 			if header then
 				id = nil
+			elseif #fields < 12 then
+				table.insert(errors, "Line " .. lineNo .. " needs the history columns.")
 			elseif not id or id == "" then
 				table.insert(errors, "Line " .. lineNo .. " has no id.")
 			else
 				table.insert(events, {
 					id = id,
 					time = tonumber(when),
-					type = eventType,
-					action = action,
-					name = name,
-					detail = detail,
-					item = item ~= "" and item or nil,
-					roll = tonumber(roll),
-					positionBefore = tonumber(beforePos),
-					positionAfter = tonumber(afterPos),
-					officer = officer,
-					delivered = delivered == "1",
+					type = fields[3],
+					action = fields[4],
+					name = fields[5],
+					detail = fields[6],
+					item = fields[7] ~= "" and fields[7] or nil,
+					roll = tonumber(fields[8]),
+					positionBefore = tonumber(fields[9]),
+					positionAfter = tonumber(fields[10]),
+					officer = fields[11],
+					delivered = fields[12] == "1",
+					teamId = fields[13] ~= "" and fields[13] or nil,
+					teamName = fields[14] ~= "" and fields[14] or nil,
+					listId = fields[15] ~= "" and fields[15] or nil,
+					listName = fields[16] ~= "" and fields[16] or nil,
 				})
 			end
 		end

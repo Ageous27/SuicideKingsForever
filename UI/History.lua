@@ -2,39 +2,152 @@ local frame = SK.UI:CreateWindow("history", "History")
 frame:SetSize(640, 560)
 local body = frame.body
 local scroll = CreateFrame("ScrollFrame", nil, body)
-scroll:SetPoint("TOPLEFT", 0, 0)
+scroll:SetPoint("TOPLEFT", 0, -26)
 scroll:SetPoint("BOTTOMRIGHT", 0, 168)
 local content = CreateFrame("Frame", nil, scroll)
-content:SetSize(430, 20)
+content:SetSize(600, 20)
 scroll:SetScrollChild(content)
+scroll:EnableMouse(true)
+scroll:EnableMouseWheel(true)
+scroll:SetScript("OnMouseWheel", function(self, delta)
+	local maxScroll = math.max(0, content:GetHeight() - self:GetHeight())
+	local nextValue = math.min(maxScroll, math.max(0, self:GetVerticalScroll() - delta * 18))
+	self:SetVerticalScroll(nextValue)
+end)
 local label = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 label:SetPoint("TOPLEFT", 4, -4)
 label:SetWidth(600)
 label:SetJustifyH("LEFT")
 label:SetJustifyV("TOP")
 
-local function refresh()
+local showEvery = false
+local dayFilter = nil
+local refresh
+local scopeBtn = CreateFrame("Button", nil, body, "UIPanelButtonTemplate")
+scopeBtn:SetSize(140, 22)
+scopeBtn:SetPoint("TOPLEFT", 0, 2)
+scopeBtn:SetText("This team")
+scopeBtn:SetScript("OnClick", function(self)
+	showEvery = not showEvery
+	self:SetText(showEvery and "Every team" or "This team")
+	refresh(true)
+end)
+
+local dayBtn = CreateFrame("Button", nil, body, "UIPanelButtonTemplate")
+dayBtn:SetSize(140, 22)
+dayBtn:SetPoint("LEFT", scopeBtn, "RIGHT", 8, 0)
+dayBtn:SetText("All")
+
+local function dayKey(event)
+	return date("%Y-%m-%d", event.time or time())
+end
+
+local function onTeam(event)
+	if showEvery or not event.teamId or event.teamId == "" then
+		return true
+	end
+	if not SK.Teams then
+		return true
+	end
+	return event.teamId == SK.Teams:TeamId()
+end
+
+local function wanted(event)
+	if not onTeam(event) then
+		return false
+	end
+	if dayFilter and dayKey(event) ~= dayFilter then
+		return false
+	end
+	return true
+end
+
+dayBtn:SetScript("OnClick", function(self)
 	local events = SK.History:Events()
-	if #events == 0 then
-		label:SetText("No events yet. List edits are recorded here.")
+	local seen = {}
+	local days = {}
+	for i = 1, #events do
+		if onTeam(events[i]) then
+			local key = dayKey(events[i])
+			if not seen[key] then
+				seen[key] = true
+				table.insert(days, key)
+			end
+		end
+	end
+	table.sort(days, function(a, b)
+		return a > b
+	end)
+	local rows = {
+		{
+			label = "All",
+			fn = function()
+				dayFilter = nil
+				dayBtn:SetText("All")
+				refresh(true)
+			end,
+		},
+	}
+	for i = 1, #days do
+		local key = days[i]
+		table.insert(rows, {
+			label = key,
+			fn = function()
+				dayFilter = key
+				dayBtn:SetText(key)
+				refresh(true)
+			end,
+		})
+	end
+	SK.UI:Pick(self, rows, 10)
+end)
+
+function refresh(resetScroll)
+	local events = SK.History:Events()
+	local shown = {}
+	for i = 1, #events do
+		if wanted(events[i]) then
+			table.insert(shown, events[i])
+		end
+	end
+	if #shown == 0 then
+		if dayFilter then
+			label:SetText("No events on " .. dayFilter .. ".")
+		else
+			label:SetText("No events yet. List edits are recorded here.")
+		end
 		content:SetHeight(40)
+		scroll:SetVerticalScroll(0)
 		return
 	end
 	local lines = {}
-	local startAt = math.max(1, #events - 40)
-	for i = #events, startAt, -1 do
-		local event = events[i]
-		local when = date("%H:%M:%S", event.time or time())
+	for i = #shown, 1, -1 do
+		local event = shown[i]
+		local when = date("%Y-%m-%d %H:%M:%S", event.time or time())
 		local detail = event.detail or ""
 		local name = event.name or ""
 		local delivered = ""
 		if event.type == "loot" and event.delivered then
 			delivered = "  delivered"
 		end
-		table.insert(lines, string.format("%s  %s  %s  %s  %s%s", when, event.type or "", event.action or "", name, detail, delivered))
+		local where = ""
+		if event.listName and event.listName ~= "" then
+			where = "  " .. (event.teamName or "") .. " / " .. event.listName
+		end
+		table.insert(lines, string.format("%s  %s  %s  %s  %s%s%s", when, event.type or "", event.action or "", name, detail, where, delivered))
 	end
 	label:SetText(table.concat(lines, "\n"))
-	content:SetHeight(math.max(40, #lines * 14 + 8))
+	local textHeight = label:GetStringHeight() or 0
+	if textHeight < 1 then
+		textHeight = #lines * 14
+	end
+	content:SetHeight(math.max(40, textHeight + 8))
+	local maxScroll = math.max(0, content:GetHeight() - scroll:GetHeight())
+	if resetScroll == true then
+		scroll:SetVerticalScroll(0)
+	elseif scroll:GetVerticalScroll() > maxScroll then
+		scroll:SetVerticalScroll(maxScroll)
+	end
 end
 
 local note = body:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")

@@ -1,6 +1,7 @@
 local frame = SK.UI.windows.list
 local panel = CreateFrame("Frame", nil, frame.body)
-panel:SetAllPoints()
+panel:SetPoint("TOPLEFT", 0, -28)
+panel:SetPoint("BOTTOMRIGHT", 0, 0)
 panel:Hide()
 
 local NAME_X, NAME_W = 4, 118
@@ -25,20 +26,53 @@ notice:SetJustifyH("LEFT")
 notice:SetHeight(28)
 notice:SetWordWrap(true)
 
-local function columnHead(text, x, width, justify)
+local function columnHead(text, x, width, justify, lines)
 	local label = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 	label:SetPoint("TOPLEFT", x, -48)
 	label:SetWidth(width)
 	label:SetJustifyH(justify)
 	label:SetText(text)
+	if not lines then
+		return
+	end
+	label:SetTextColor(1, 0.82, 0)
+	local hit = CreateFrame("Frame", nil, panel)
+	hit:SetPoint("TOPLEFT", x, -46)
+	hit:SetSize(width, 18)
+	hit:EnableMouse(true)
+	hit:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		GameTooltip:SetText(text, 1, 0.82, 0)
+		for i = 1, #lines do
+			GameTooltip:AddLine(lines[i], 1, 1, 1, true)
+		end
+		GameTooltip:Show()
+	end)
+	hit:SetScript("OnLeave", function()
+		GameTooltip:Hide()
+	end)
 end
 
 columnHead("Name", NAME_X, NAME_W, "LEFT")
 columnHead("Current Pos", CUR_X, CUR_W, "RIGHT")
 columnHead("New Pos", NEW_X, NEW_W, "RIGHT")
-columnHead("Status", STATUS_X, STATUS_W, "CENTER")
-columnHead("Shift", SHIFT_X, SHIFT_W, "CENTER")
-columnHead("Rolls", ROLLS_X, ROLLS_W, "CENTER")
+columnHead("Status", STATUS_X, STATUS_W, "CENTER", {
+	"Present: in the raid. Shift starts at Raise. Rolls are Bid, MS, and OS.",
+	"Bench, Absent, and No-call/no-show: they cannot roll. Hold, Raise, or a demote comes from Settings.",
+	"Pug/fill: guest for this raid, bottom of every list. Rolls are MS and OS. Shift is Hold.",
+	"Blank: lock sets Present if they are in the raid, and Absent if they are missing.",
+})
+columnHead("Shift", SHIFT_X, SHIFT_W, "CENTER", {
+	"Raise: a winner can pass this person.",
+	"Hold: a winner does not pass this person. Their position number stays.",
+	"Setting a status puts this back to that status default.",
+})
+columnHead("Rolls", ROLLS_X, ROLLS_W, "CENTER", {
+	"Bid, MS, OS: bid or roll. A bid beats every roll. MS beats OS.",
+	"MS, OS: main spec or off spec. No bid.",
+	"Cannot Roll: no bid and no roll.",
+	"Setting a status puts this back to that status default.",
+})
 
 local scroll = CreateFrame("ScrollFrame", nil, panel)
 scroll:SetPoint("TOPLEFT", 0, -66)
@@ -53,7 +87,6 @@ local message = ""
 local menu
 local paint
 local selected
-local confirmRemove = false
 
 local CORE_CHOICES = { "--", "Present", "Bench", "Absent", "No-call/no-show", "Pug/fill" }
 local GUEST_CHOICES = { "--", "Pug/fill", "Present", "Bench", "Absent", "No-call/no-show" }
@@ -191,6 +224,8 @@ local function openMenu(anchor, rowFrame, kind)
 	popup:Show()
 end
 
+local showRemoveMenu
+
 local function rowButton(index)
 	local button = rows[index]
 	if button then
@@ -207,10 +242,23 @@ local function rowButton(index)
 		if mouseButton ~= "LeftButton" or not self.person then
 			return
 		end
-		if selected ~= self.person.name then
-			confirmRemove = false
-		end
 		selected = self.person.name
+		paint()
+	end)
+	button.nameHit = CreateFrame("Button", nil, button)
+	button.nameHit:SetPoint("LEFT", NAME_X, 0)
+	button.nameHit:SetSize(NAME_W, ROW_H)
+	button.nameHit:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+	button.nameHit:SetScript("OnClick", function(self, mouseButton)
+		local row = self:GetParent()
+		if not row.person then
+			return
+		end
+		if mouseButton == "RightButton" then
+			showRemoveMenu(row.person.name)
+			return
+		end
+		selected = row.person.name
 		paint()
 	end)
 	button.name = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -294,7 +342,101 @@ local downBtn = editButton("Move down", 86, 80)
 local bottomBtn = editButton("Move bottom", 100, 170)
 local insertBtn = editButton("Insert", 64, 274)
 local addBtn = editButton("Add", 56, 342)
-local removeBtn = editButton("Remove", 72, 402)
+
+local removeMenu = CreateFrame("Frame", "SKFReconcileRemove", UIParent, "BackdropTemplate")
+removeMenu:SetFrameStrata("TOOLTIP")
+removeMenu:SetSize(120, 28)
+removeMenu:SetClampedToScreen(true)
+removeMenu:EnableMouse(true)
+removeMenu:Hide()
+removeMenu:SetBackdrop({
+	bgFile = "Interface\\Buttons\\WHITE8X8",
+	edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+	tile = true,
+	tileSize = 8,
+	edgeSize = 12,
+	insets = { left = 3, right = 3, top = 3, bottom = 3 },
+})
+removeMenu:SetBackdropColor(0.05, 0.05, 0.05, 0.96)
+removeMenu:SetBackdropBorderColor(0.75, 0.62, 0.28, 1)
+local removeItem = CreateFrame("Button", nil, removeMenu)
+removeItem:SetPoint("TOPLEFT", 4, -4)
+removeItem:SetPoint("BOTTOMRIGHT", -4, 4)
+removeItem.text = removeItem:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+removeItem.text:SetPoint("LEFT", 8, 0)
+removeItem.text:SetPoint("RIGHT", -6, 0)
+removeItem.text:SetJustifyH("LEFT")
+removeItem.text:SetText("Remove")
+removeItem.text:SetTextColor(1, 0.45, 0.4)
+removeItem.hi = removeItem:CreateTexture(nil, "BACKGROUND")
+removeItem.hi:SetAllPoints()
+if removeItem.hi.SetColorTexture then
+	removeItem.hi:SetColorTexture(1, 0.82, 0, 0.16)
+end
+removeItem.hi:Hide()
+removeItem:SetScript("OnEnter", function(self)
+	self.hi:Show()
+	self.text:SetTextColor(1, 0.82, 0)
+end)
+removeItem:SetScript("OnLeave", function(self)
+	self.hi:Hide()
+	self.text:SetTextColor(1, 0.45, 0.4)
+end)
+
+local function hideRemoveMenu()
+	removeMenu.pending = nil
+	removeMenu.arming = false
+	removeMenu:Hide()
+end
+
+function showRemoveMenu(name)
+	if not name or name == "" then
+		return
+	end
+	removeMenu.pending = name
+	local x, y = GetCursorPosition()
+	local scale = UIParent:GetEffectiveScale()
+	removeMenu:ClearAllPoints()
+	removeMenu:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", (x / scale) + 2, y / scale)
+	removeMenu.arming = true
+	removeMenu:Show()
+end
+
+removeMenu:SetScript("OnUpdate", function(self)
+	if not self:IsShown() or not self.arming then
+		return
+	end
+	if not IsMouseButtonDown("RightButton") then
+		self.arming = false
+	end
+end)
+removeMenu:SetScript("OnHide", function(self)
+	self.arming = false
+end)
+removeItem:SetScript("OnClick", function()
+	local name = removeMenu.pending
+	hideRemoveMenu()
+	if not name then
+		return
+	end
+	message = SK.List:Remove(name) or ""
+	if message == "" and selected == name then
+		selected = nil
+	end
+	if SK.UI.RefreshList then
+		SK.UI.RefreshList()
+	end
+end)
+local removeWatcher = CreateFrame("Frame", nil, UIParent)
+removeWatcher:SetScript("OnUpdate", function()
+	if not removeMenu:IsShown() or removeMenu.arming then
+		return
+	end
+	local down = IsMouseButtonDown("LeftButton") or IsMouseButtonDown("RightButton")
+	if down and not removeMenu:IsMouseOver() then
+		hideRemoveMenu()
+	end
+end)
 
 local form = CreateFrame("Frame", nil, panel)
 form:SetPoint("BOTTOMLEFT", 0, 54)
@@ -363,8 +505,7 @@ end
 local function showForm(kind)
 	insertOpen = kind == "insert"
 	addOpen = kind == "add"
-	confirmRemove = false
-	removeBtn:SetText("Remove")
+	hideRemoveMenu()
 	if insertOpen then
 		formLabel:SetText("Core name and class")
 		commit:SetText("Add name")
@@ -505,8 +646,6 @@ paint = function()
 	upBtn:SetEnabled(picked and not picked.pug)
 	downBtn:SetEnabled(picked and not picked.pug)
 	bottomBtn:SetEnabled(picked and not picked.pug)
-	removeBtn:SetEnabled(picked and true or false)
-	removeBtn:SetText(confirmRemove and "Confirm" or "Remove")
 	summary:SetText("Highlighted rows need a status. Lock still fills a blank in-raid name as Present and a blank missing name as Absent.")
 	if message ~= "" then
 		notice:SetText(message)
@@ -530,7 +669,6 @@ upBtn:SetScript("OnClick", function()
 	if not selected then
 		return
 	end
-	confirmRemove = false
 	message = SK.List:Move(selected, -1) or ""
 	if SK.UI.RefreshList then
 		SK.UI.RefreshList()
@@ -540,7 +678,6 @@ downBtn:SetScript("OnClick", function()
 	if not selected then
 		return
 	end
-	confirmRemove = false
 	message = SK.List:Move(selected, 1) or ""
 	if SK.UI.RefreshList then
 		SK.UI.RefreshList()
@@ -550,7 +687,6 @@ bottomBtn:SetScript("OnClick", function()
 	if not selected then
 		return
 	end
-	confirmRemove = false
 	message = SK.List:MoveBottom(selected) or ""
 	if SK.UI.RefreshList then
 		SK.UI.RefreshList()
@@ -581,26 +717,6 @@ commit:SetScript("OnClick", function()
 		SK.UI.RefreshList()
 	end
 end)
-removeBtn:SetScript("OnClick", function()
-	if not selected then
-		return
-	end
-	if not confirmRemove then
-		confirmRemove = true
-		message = "Remove " .. selected .. "?"
-		paint()
-		return
-	end
-	message = SK.List:Remove(selected) or ""
-	if message == "" then
-		selected = nil
-	end
-	confirmRemove = false
-	if SK.UI.RefreshList then
-		SK.UI.RefreshList()
-	end
-end)
-
 lockBtn:SetScript("OnClick", function()
 	local text = SK.Session:LockRaid() or "Raid locked."
 	if SK.UI.Note then
@@ -622,5 +738,7 @@ end
 function SK.UI.HideReconcile()
 	hideMenu()
 	hideForm()
+	hideRemoveMenu()
+	GameTooltip:Hide()
 	panel:Hide()
 end

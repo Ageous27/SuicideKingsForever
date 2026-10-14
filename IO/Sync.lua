@@ -49,7 +49,7 @@ local function encode(row)
 	local pug = row.pug and "1" or "0"
 	local rolls = ROLL_TOKEN[row.rolls or ""] or ""
 	local hold = row.hold and "1" or "0"
-	return table.concat({ row.name, row.class, position, status, pug, rolls, hold }, ",")
+	return table.concat({ row.name or "", row.class or "", position, status, pug, rolls, hold }, ",")
 end
 
 local function decode(piece)
@@ -72,11 +72,23 @@ local function decode(piece)
 	}
 end
 
+function SK.Sync.EncodeRow(row)
+	return encode(row)
+end
+
+function SK.Sync.DecodeRow(piece)
+	return decode(piece)
+end
+
 function SK.Sync:Broadcast()
 	if not SK.Session:IsOfficer() then
 		return
 	end
 	if not channel() then
+		return
+	end
+	if SK.Teams then
+		self:BroadcastTeam()
 		return
 	end
 	local chunks = {}
@@ -106,6 +118,59 @@ function SK.Sync:Broadcast()
 		send(string.format("L,%s,%d,%d,%s,%s,%s", token, i, #chunks, seeding, locked, chunks[i]))
 	end
 	SK.Debug:Line("Sync", "broadcast", #list .. " rows in " .. #chunks .. " chunks")
+end
+
+local bankInbox = {}
+
+function SK.Sync:BroadcastTeam()
+	if not SK.Session:IsOfficer() or not channel() or not SK.Teams then
+		return
+	end
+	local pieces = SK.Teams:Pieces()
+	local chunks = {}
+	local buf = ""
+	local function push(piece)
+		if buf ~= "" and (#buf + #piece + 1) > 160 then
+			table.insert(chunks, buf)
+			buf = piece
+		elseif buf == "" then
+			buf = piece
+		else
+			buf = buf .. ";" .. piece
+		end
+	end
+	for i = 1, #pieces do
+		push(pieces[i])
+	end
+	if buf ~= "" or #chunks == 0 then
+		table.insert(chunks, buf)
+	end
+	self.bankToken = (self.bankToken or 0) + 1
+	local token = tostring(self.bankToken)
+	local locked = SK.Session:IsLocked() and "1" or "0"
+	for i = 1, #chunks do
+		send(string.format("B,%s,%d,%d,%s,%s", token, i, #chunks, locked, chunks[i]))
+	end
+	SK.Debug:Line("Sync", "team", #pieces .. " pieces in " .. #chunks .. " chunks")
+end
+
+local function applyBank(bucket)
+	local parts = {}
+	for i = 1, bucket.n do
+		local payload = bucket.parts[i]
+		if not payload then
+			return
+		end
+		if payload ~= "" then
+			for piece in string.gmatch(payload, "([^;]+)") do
+				table.insert(parts, piece)
+			end
+		end
+	end
+	if SK.Teams then
+		SK.Teams:ApplyPieces(parts, bucket.locked)
+	end
+	SK.Debug:Line("Sync", "team", #parts .. " pieces")
 end
 
 function SK.Sync:Request()
@@ -160,7 +225,8 @@ local function onAddon(prefix, text, _, sender)
 	if string.sub(text, 1, 2) == "H|" then
 		if sender ~= me then
 			local id, eventType, action, name, detail, roll, beforePos, afterPos = string.match(text, "^H|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)")
-			local delivered = string.match(text, "^H|[^|]*|[^|]*|[^|]*|[^|]*|[^|]*|[^|]*|[^|]*|[^|]*|([01])$")
+			local delivered = string.match(text, "^H|[^|]*|[^|]*|[^|]*|[^|]*|[^|]*|[^|]*|[^|]*|[^|]*|([01])")
+			local teamId, teamName, listId, listName = string.match(text, "^H|[^|]*|[^|]*|[^|]*|[^|]*|[^|]*|[^|]*|[^|]*|[^|]*|[01]|([^|]*)|([^|]*)|([^|]*)|([^|]*)")
 			if id and id ~= "" then
 				SK.History:Append({
 					id = id,
@@ -173,6 +239,10 @@ local function onAddon(prefix, text, _, sender)
 					positionAfter = tonumber(afterPos),
 					officer = sender,
 					delivered = delivered == "1",
+					teamId = teamId ~= "" and teamId or nil,
+					teamName = teamName ~= "" and teamName or nil,
+					listId = listId ~= "" and listId or nil,
+					listName = listName ~= "" and listName or nil,
 				})
 			end
 		end
@@ -207,12 +277,18 @@ local function onAddon(prefix, text, _, sender)
 	end
 	if kind == "G" then
 		if sender ~= me and not SK.Session:IsOfficer() then
-			local drop, timer, countdown, disenchanter, autoAdd, autoQuality = string.match(text, "^G,([^,]+),([^,]+),([^,]+),([^,]*),([01]),(%d+)$")
+			local drop, timer, countdown, disenchanter, autoAdd, autoQuality, statusRules, awayMinutes = string.match(text, "^G,([^,]+),([^,]+),([^,]+),([^,]*),([01]),(%d+),([^,]*),(%d+)$")
+			if not drop then
+				drop, timer, countdown, disenchanter, autoAdd, autoQuality, statusRules = string.match(text, "^G,([^,]+),([^,]+),([^,]+),([^,]*),([01]),(%d+),([^,]*)$")
+			end
+			if not drop then
+				drop, timer, countdown, disenchanter, autoAdd, autoQuality = string.match(text, "^G,([^,]+),([^,]+),([^,]+),([^,]*),([01]),(%d+)$")
+			end
 			if not drop then
 				drop, timer, countdown = string.match(text, "^G,([^,]+),([^,]+),([^,]+)$")
 			end
 			if drop then
-				SK.Settings:ApplyRemote(drop, timer, countdown, disenchanter, autoAdd, autoQuality)
+				SK.Settings:ApplyRemote(drop, timer, countdown, disenchanter, autoAdd, autoQuality, statusRules, awayMinutes)
 			end
 		end
 		return
@@ -243,6 +319,34 @@ local function onAddon(prefix, text, _, sender)
 			if choice then
 				SK.Session:Respond(sender, choice, tonumber(roll), "popup")
 			end
+		end
+		return
+	end
+	if kind == "B" then
+		if sender == me or SK.Session:IsOfficer() then
+			return
+		end
+		local token, index, count, locked, payload = string.match(text, "^B,([^,]+),(%d+),(%d+),([01]),(.*)$")
+		if not token then
+			return
+		end
+		index = tonumber(index)
+		count = tonumber(count)
+		local bucket = bankInbox[token]
+		if not bucket then
+			bucket = { n = count, parts = {}, locked = locked == "1" }
+			bankInbox[token] = bucket
+		end
+		bucket.parts[index] = payload or ""
+		local got = 0
+		for i = 1, bucket.n do
+			if bucket.parts[i] ~= nil then
+				got = got + 1
+			end
+		end
+		if got == bucket.n then
+			applyBank(bucket)
+			bankInbox[token] = nil
 		end
 		return
 	end
@@ -283,7 +387,10 @@ SK.Events:Register("PLAYER_LOGIN", function()
 end)
 
 SK.Events:On("SK_LIST_CHANGED", function(source)
-	if source == "snapshot" then
+	if source ~= "snapshot" and SK.Teams then
+		SK.Teams:Flush()
+	end
+	if source == "snapshot" or source == "view" then
 		return
 	end
 	SK.Sync:Broadcast()
@@ -305,13 +412,15 @@ function SK.Sync:BroadcastSettings()
 	end
 	local settings = SK.Settings:Get()
 	send(string.format(
-		"G,%s,%s,%s,%s,%s,%s",
+		"G,%s,%s,%s,%s,%s,%s,%s,%s",
 		settings.bidDrop or "last",
 		tostring(settings.timer or 15),
 		tostring(settings.countdown or 5),
 		settings.disenchanter or "",
 		settings.autoAdd and "1" or "0",
-		tostring(settings.autoQuality or 2)
+		tostring(settings.autoQuality or 2),
+		SK.Settings:PackStatusRules(),
+		tostring(settings.awayMinutes or 10)
 	))
 end
 
@@ -331,9 +440,23 @@ function SK.Sync:BroadcastSession(reason)
 			end
 			names = table.concat(list, ";")
 		end
-		local payload = string.format("V,%s,%s,%s,%s,%s", live.state or "open", tostring(live.endsAt or 0), tier, names, live.link or live.name or "")
+		local linkBody = live.link or live.name or ""
+		linkBody = string.gsub(linkBody, "\031", "")
+		local packed = table.concat({
+			live.listId or "",
+			live.listName or "",
+			live.teamId or "",
+			linkBody,
+		}, "\031")
+		local payload = string.format("V,%s,%s,%s,%s,%s", live.state or "open", tostring(live.endsAt or 0), tier, names, packed)
 		if #payload > 240 then
-			payload = string.format("V,%s,%s,%s,%s,%s", live.state or "open", tostring(live.endsAt or 0), tier, names, live.name or "item")
+			local shortPacked = table.concat({
+				live.listId or "",
+				live.listName or "",
+				live.teamId or "",
+				live.name or "item",
+			}, "\031")
+			payload = string.format("V,%s,%s,%s,%s,%s", live.state or "open", tostring(live.endsAt or 0), tier, names, shortPacked)
 		end
 		send(payload)
 		return
@@ -357,7 +480,7 @@ function SK.Sync:BroadcastHistory(event)
 		value = string.gsub(value, "|", "/")
 		return value
 	end
-	send(table.concat({
+	local payload = table.concat({
 		"H",
 		clean(event.id),
 		clean(event.type),
@@ -368,7 +491,26 @@ function SK.Sync:BroadcastHistory(event)
 		clean(event.positionBefore),
 		clean(event.positionAfter),
 		event.delivered and "1" or "0",
-	}, "|"))
+		clean(event.teamId),
+		clean(event.teamName),
+		clean(event.listId),
+		clean(event.listName),
+	}, "|")
+	if #payload > 240 then
+		payload = table.concat({
+			"H",
+			clean(event.id),
+			clean(event.type),
+			clean(event.action),
+			clean(event.name),
+			clean(event.detail),
+			clean(event.roll),
+			clean(event.positionBefore),
+			clean(event.positionAfter),
+			event.delivered and "1" or "0",
+		}, "|")
+	end
+	send(payload)
 end
 
 function SK.Sync:BroadcastJoin(name, waiting)

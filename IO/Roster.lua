@@ -27,6 +27,36 @@ local function add(out, name, displayName, classFile)
 	}
 end
 
+function SK.Roster:Resolve(name)
+	name = SK.Trim(name)
+	if name == "" then
+		return nil, nil, nil
+	end
+	local members = self:Members()
+	local exact = members[string.lower(name)]
+	if exact then
+		return exact.name, exact.class, nil
+	end
+	if string.find(name, " ", 1, true) then
+		return nil, nil, nil
+	end
+	local first = string.lower(string.match(name, "^(%S+)") or name)
+	local hits = {}
+	for _, member in pairs(members) do
+		local memberFirst = string.lower(string.match(member.name, "^(%S+)") or member.name)
+		if memberFirst == first then
+			table.insert(hits, member)
+		end
+	end
+	if #hits == 1 then
+		return hits[1].name, hits[1].class, nil
+	end
+	if #hits > 1 then
+		return nil, nil, "many"
+	end
+	return nil, nil, nil
+end
+
 function SK.Roster:Members()
 	local out = {}
 	if IsInRaid and IsInRaid() and GetRaidRosterInfo and GetNumGroupMembers then

@@ -1,7 +1,7 @@
 ## Interface: 16001
 ## Title: Suicide Kings Forever
 ## Notes: Suicide Kings loot for WoW Forever
-## Version: 0.3.0
+## Version: 0.3.1
 ## SavedVariables: SKDB
 ## Author: Suicide Kings Forever
 
@@ -10,6 +10,7 @@ Core/Saved.lua
 Core/Events.lua
 Core/Item.lua
 Core/Debug.lua
+State/Teams.lua
 State/List.lua
 State/Settings.lua
 State/History.lua

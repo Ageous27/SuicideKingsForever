@@ -199,14 +199,18 @@ function SK.Session:Queue(link)
 	local info = SK.Item.Describe(link)
 	local waiting = db().waiting
 	local id = "i" .. tostring(time()) .. tostring(#waiting + 1)
-	table.insert(waiting, {
+	local entry = {
 		id = id,
 		raw = link,
 		link = info.link or link,
 		name = info.name or "Loading item...",
 		icon = info.icon,
 		itemID = info.itemID,
-	})
+	}
+	if SK.Teams then
+		SK.Teams:Assign(entry)
+	end
+	table.insert(waiting, entry)
 	db().selected = id
 	db().note = (info.name or "Item") .. " added to Waiting."
 	changed("queue")
@@ -275,9 +279,14 @@ function SK.Session:Decision()
 end
 
 function SK.Session:ChoicesFor(name)
-	local row = SK.List:Find(SK.ShortName(name))
-	local seeding = self:IsSeeding()
 	local live = self:Live()
+	local row
+	if live and live.listId and SK.Teams then
+		row = SK.Teams:Row(live.listId, SK.ShortName(name))
+	else
+		row = SK.List:Find(SK.ShortName(name))
+	end
+	local seeding = self:IsSeeding()
 	if live and live.seeding ~= nil then
 		seeding = live.seeding
 	end
@@ -325,7 +334,12 @@ function SK.Session:Respond(name, choice, roll, source)
 	else
 		roll = nil
 	end
-	local row = SK.List:Find(name)
+	local row
+	if live.listId and SK.Teams then
+		row = SK.Teams:Row(live.listId, name)
+	else
+		row = SK.List:Find(name)
+	end
 	local record = {
 		name = row and row.name or name,
 		choice = choice,
@@ -387,6 +401,12 @@ function SK.Session:Start()
 	if not item then
 		return "Select a Waiting item."
 	end
+	if SK.Teams then
+		SK.Teams:Assign(item)
+		if not item.listId then
+			return "Pick a list for this item."
+		end
+	end
 	local settings = SK.Settings:Get()
 	local duration = settings.timer or 15
 	local countdown = settings.countdown or 5
@@ -405,14 +425,20 @@ function SK.Session:Start()
 		responses = {},
 		rolloff = nil,
 		said = {},
-		seeding = self:IsSeeding(),
+		seeding = (item.listId and SK.Teams and SK.Teams:IsSeeding(item.listId)) or self:IsSeeding(),
 		override = nil,
 		rolloffTries = 0,
+		listId = item.listId,
+		listName = item.listName,
+		listPick = item.listPick,
+		teamId = SK.Teams and SK.Teams:TeamId() or nil,
+		teamName = SK.Teams and SK.Teams:TeamName() or nil,
 	}
 	removeWaiting(item.id)
 	db().selected = nil
-	db().note = SK.Item.Display(item) .. " is live. " .. duration .. " seconds."
-	say(shownItem(item) .. " — bid, or MS /roll 100, or OS /roll 99. " .. duration .. " seconds.")
+	local listLabel = item.listName or "list"
+	db().note = SK.Item.Display(item) .. " is live on " .. listLabel .. ". " .. duration .. " seconds."
+	say(shownItem(item) .. " — " .. listLabel .. " — bid, or MS /roll 100, or OS /roll 99. " .. duration .. " seconds.")
 	changed("start")
 	return nil
 end
@@ -506,6 +532,98 @@ function SK.Session:EndEarly()
 	return nil
 end
 
+local enteredAt = 0
+
+local function inGroup()
+	if IsInRaid and IsInRaid() then
+		return true
+	end
+	if IsInGroup and IsInGroup() then
+		return true
+	end
+	return false
+end
+
+local function inInstance()
+	if not GetInstanceInfo then
+		return false
+	end
+	local ok, _, kind = pcall(GetInstanceInfo)
+	if not ok then
+		return false
+	end
+	return kind == "raid" or kind == "party"
+end
+
+local function raidIsOpen(session)
+	if session.locked or (session.raidId and session.raidId ~= "") then
+		return true
+	end
+	if not SK.Saved or not SK.Saved.List then
+		return false
+	end
+	local list = SK.Saved:List()
+	for i = 1, #list do
+		if list[i].pug then
+			return true
+		end
+	end
+	return false
+end
+
+function SK.Session:CheckAway()
+	if type(SKDB) ~= "table" or type(SKDB.session) ~= "table" then
+		return
+	end
+	local now = time()
+	if enteredAt == 0 then
+		enteredAt = now
+	end
+	local session = SKDB.session
+	local grouped = inGroup()
+	local inside = inInstance()
+	if grouped or inside then
+		session.awaySince = nil
+		if self:IsOfficer() then
+			session.raidSawGroup = true
+			session.raidOfficer = UnitName("player")
+		end
+		return
+	end
+	if not session.raidSawGroup or not session.raidOfficer then
+		return
+	end
+	if session.raidOfficer ~= UnitName("player") then
+		return
+	end
+	if not raidIsOpen(session) then
+		session.awaySince = nil
+		return
+	end
+	if not session.awaySince then
+		session.awaySince = now
+		return
+	end
+	if now - enteredAt < 15 then
+		return
+	end
+	local awaySeconds = 600
+	if SK.Settings and SK.Settings.AwaySeconds then
+		awaySeconds = SK.Settings:AwaySeconds()
+	end
+	if now - session.awaySince < awaySeconds then
+		return
+	end
+	session.awaySince = nil
+	if not SK.List or not SK.List.EndRaid then
+		return
+	end
+	local err = SK.List:EndRaid()
+	if not err and SK.Print then
+		SK.Print("Raid ended.")
+	end
+end
+
 function SK.Session:Tick()
 	if type(SKDB) ~= "table" or type(SKDB.session) ~= "table" then
 		return
@@ -563,10 +681,17 @@ function SK.Session:Award()
 	end
 	local before, after
 	local seedingWin = live.seeding and winner.unseeded and not winner.pug
+	local function moveWinner()
+		return SK.List:AwardMove(winner.name, winner.choice, bidders(live), SK.Settings:Get().bidDrop, seedingWin)
+	end
 	if seedingWin or winner.choice == "Bid" then
-		before, after = SK.List:AwardMove(winner.name, winner.choice, bidders(live), SK.Settings:Get().bidDrop, seedingWin)
+		if SK.Teams and live.listId then
+			before, after = SK.Teams:WithList(live.listId, moveWinner)
+		else
+			before, after = moveWinner()
+		end
 	else
-		local row = SK.List:Find(winner.name)
+		local row = (SK.Teams and live.listId) and SK.Teams:Row(live.listId, winner.name) or SK.List:Find(winner.name)
 		before = row and row.position or nil
 		after = before
 	end
@@ -581,6 +706,10 @@ function SK.Session:Award()
 		positionAfter = after,
 		officer = UnitName("player"),
 		delivered = false,
+		teamId = live.teamId,
+		teamName = live.teamName,
+		listId = live.listId,
+		listName = live.listName,
 	}
 	local given = SK.Trade and SK.Trade.GiveMasterLoot and SK.Trade:GiveMasterLoot(live, winner.name)
 	if given then
@@ -635,6 +764,10 @@ function SK.Session:Disenchant()
 		item = live.link,
 		officer = UnitName("player"),
 		delivered = false,
+		teamId = live.teamId,
+		teamName = live.teamName,
+		listId = live.listId,
+		listName = live.listName,
 	}
 	SK.History:Append(event)
 	table.insert(db().needsTrade, {
@@ -677,6 +810,9 @@ function SK.Session:Cancel()
 		icon = live.icon,
 		itemID = live.itemID,
 		raw = live.raw,
+		listId = live.listId,
+		listName = live.listName,
+		listPick = true,
 	})
 	db().selected = live.id
 	db().note = SK.Item.Display(live) .. " is back on Waiting."
@@ -701,6 +837,11 @@ function SK.Session:ApplyRemote(state, endsAt, tier, names, link)
 		end
 	end
 	local info = SK.Item.Describe(link)
+	local listId, listName, teamId, realLink = string.match(link, "^([^\031]*)\031([^\031]*)\031([^\031]*)\031(.*)$")
+	if realLink then
+		link = realLink
+		info = SK.Item.Describe(link)
+	end
 	db().live = {
 		link = info.link or link,
 		name = info.name or "Loading item...",
@@ -710,8 +851,12 @@ function SK.Session:ApplyRemote(state, endsAt, tier, names, link)
 		endsAt = tonumber(endsAt) or 0,
 		state = state or "open",
 		responses = {},
-		seeding = self:IsSeeding(),
+		seeding = (listId and listId ~= "" and SK.Teams and SK.Teams:IsSeeding(listId)) or self:IsSeeding(),
 		rolloff = (tier and tier ~= "") and { tier = tier, names = map } or nil,
+		listId = listId ~= "" and listId or nil,
+		listName = listName ~= "" and listName or nil,
+		teamId = teamId ~= "" and teamId or nil,
+		teamName = SK.Teams and SK.Teams:TeamName() or nil,
 	}
 	changed("remote")
 end
@@ -725,7 +870,12 @@ function SK.Session:LockRaid()
 	end
 	local grouped = IsInGroup and IsInGroup()
 	local raid = SK.Roster and SK.Roster.Members and SK.Roster:Members() or {}
-	local list = SK.Saved:List()
+	local filled = {}
+	if SK.Teams then
+		SK.Teams:Flush()
+		filled = SK.Teams:FillFromRaid()
+	end
+	local list = SK.Teams and SK.Teams:People() or SK.Saved:List()
 	for i = 1, #list do
 		local row = list[i]
 		if row.pug then
@@ -733,7 +883,7 @@ function SK.Session:LockRaid()
 			if not row.rolls or row.rolls == "" then
 				row.rolls = "MS, OS"
 			end
-		elseif not row.status or row.status == "" then
+		elseif not row.status or row.status == "" or (filled[string.lower(row.name)] and row.status == "Absent") then
 			local key = string.lower(row.name)
 			if not grouped or raid[key] then
 				row.status = "Present"
@@ -751,10 +901,20 @@ function SK.Session:LockRaid()
 			end
 		end
 	end
-	local notes = SK.Rules.Reconcile.DropNoCalls(list)
+	local notes
+	if SK.Teams then
+		SK.Teams:Materialize()
+		notes = SK.Teams:DropNoCallAll()
+	else
+		notes = SK.Rules.Reconcile.DropNoCalls(list)
+	end
+	list = SK.Saved:List()
 	local session = SK.Saved:Session()
 	session.locked = true
-	session.raidId = tostring(time())
+	if not session.raidId or session.raidId == "" then
+		session.raidId = tostring(time())
+	end
+	session.raidOfficer = UnitName("player")
 	session.raidAtLock = {}
 	for key in pairs(raid) do
 		session.raidAtLock[key] = true
@@ -765,14 +925,19 @@ function SK.Session:LockRaid()
 	for i = 1, #list do
 		local row = list[i]
 		local rule = SK.Rules.Reconcile.Rule(row, notes)
-		SK.History:Append({
+		local where = SK.Teams and SK.Teams:PositionLine(row.name) or ""
+		local event = {
 			type = "reconcile",
 			action = row.status or "",
 			name = row.name,
-			detail = (row.rolls or "") .. " / " .. rule .. " / raid " .. session.raidId,
+			detail = (row.rolls or "") .. " / " .. rule .. " / raid " .. session.raidId .. " / " .. where,
 			positionBefore = row.position,
 			officer = UnitName("player"),
-		})
+		}
+		if SK.Teams then
+			SK.Teams:Stamp(event)
+		end
+		SK.History:Append(event)
 	end
 	SK.List:SortInPlace()
 	SK.List:ClearPosBase()
@@ -806,14 +971,16 @@ function SK.Session:CheckJoins()
 	end
 	local added = false
 	for key, info in pairs(raid) do
+		local person = SK.Teams and SK.Teams:Person(info.name) or nil
 		local row = SK.List:Find(info.name)
-		local alreadyPug = row and row.pug
+		local onCore = person and not person.pug or (not person and row and not row.pug)
+		local alreadyPug = (person and person.pug) or (row and row.pug)
 		if not atLock[key] and not session.joinAnswers[key] and not queued[key] and not alreadyPug then
 			table.insert(session.pendingJoins, {
-				name = row and row.name or info.name,
+				name = (person and person.name) or (row and row.name) or info.name,
 				class = info.class,
 				position = row and not row.pug and row.position or nil,
-				onList = row and not row.pug or false,
+				onList = onCore and true or false,
 				joinedAt = time(),
 			})
 			session.blocked[key] = true
@@ -845,11 +1012,15 @@ function SK.Session:AnswerJoin(allow)
 	session.blocked[string.lower(entry.name)] = nil
 	local result = "still ineligible"
 	if allow and entry.onList then
-		local row = SK.List:Find(entry.name)
+		local person = SK.Teams and SK.Teams:Person(entry.name) or nil
+		local row = person or SK.List:Find(entry.name)
 		if row and not row.pug then
 			row.status = "Present"
 			row.hold = false
 			row.rolls = "Bid, MS, OS"
+			if SK.Teams then
+				SK.Teams:Materialize()
+			end
 			result = "Present"
 		end
 	elseif allow and not entry.onList then
@@ -857,14 +1028,19 @@ function SK.Session:AnswerJoin(allow)
 		result = "pug/fill"
 	end
 	local when = date("%H:%M:%S", entry.joinedAt or time())
-	SK.History:Append({
+	local where = SK.Teams and SK.Teams:PositionLine(entry.name) or ""
+	local event = {
 		type = "latejoin",
 		action = allow and "Allowed" or "Denied",
 		name = entry.name,
-		detail = result .. " / joined " .. when .. " / raid " .. (session.raidId or ""),
+		detail = result .. " / " .. where .. " / joined " .. when .. " / raid " .. (session.raidId or ""),
 		positionBefore = entry.position,
 		officer = UnitName("player"),
-	})
+	}
+	if SK.Teams then
+		SK.Teams:Stamp(event)
+	end
+	SK.History:Append(event)
 	if SK.Sync and SK.Sync.BroadcastJoin then
 		SK.Sync:BroadcastJoin(entry.name, false)
 	end
@@ -936,14 +1112,18 @@ function SK.Session:AutoLoot()
 			end
 			if quality and quality >= floor then
 				local id = "i" .. tostring(time()) .. tostring(#waiting + 1) .. tostring(slot)
-				table.insert(waiting, {
+				local entry = {
 					id = id,
 					raw = link,
 					link = info.link or link,
 					name = info.name or "Loading item...",
 					icon = info.icon,
 					itemID = info.itemID,
-				})
+				}
+				if SK.Teams then
+					SK.Teams:Assign(entry)
+				end
+				table.insert(waiting, entry)
 				db().selected = id
 				added = added + 1
 			end
@@ -976,5 +1156,14 @@ ticker:SetScript("OnUpdate", function(_, elapsed)
 	acc = 0
 	if SK.Session.Tick then
 		SK.Session:Tick()
+	end
+	if SK.Session.CheckAway then
+		SK.Session:CheckAway()
+	end
+end)
+
+SK.Events:Register("PLAYER_ENTERING_WORLD", function()
+	if enteredAt == 0 then
+		enteredAt = time()
 	end
 end)

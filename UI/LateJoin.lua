@@ -8,7 +8,7 @@ local BACKDROP = {
 }
 
 local frame = CreateFrame("Frame", "SKFLateJoin", UIParent, "BackdropTemplate")
-frame:SetSize(440, 200)
+frame:SetSize(460, 260)
 frame:SetFrameStrata("DIALOG")
 frame:SetClampedToScreen(true)
 frame:SetMovable(true)
@@ -67,6 +67,8 @@ text:SetPoint("TOPLEFT", 24, -48)
 text:SetPoint("TOPRIGHT", -24, -48)
 text:SetJustifyH("CENTER")
 text:SetJustifyV("TOP")
+text:SetWordWrap(true)
+text:SetHeight(150)
 
 local yesBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
 yesBtn:SetSize(90, 24)
@@ -87,6 +89,9 @@ local function current()
 end
 
 local function positionText(entry)
+	if SK.Teams then
+		return SK.Teams:PositionLine(entry.name)
+	end
 	if not entry.onList then
 		return "not on the core list"
 	end

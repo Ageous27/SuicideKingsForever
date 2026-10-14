@@ -83,7 +83,57 @@ function SK.Item.Describe(text)
 		link = link,
 		icon = icon,
 		quality = quality,
+		slot = SK.Item.Slot(id),
 	}
+end
+
+SK.Item.SLOTS = {
+	"Head", "Neck", "Shoulder", "Back", "Chest", "Wrist", "Hands", "Waist", "Legs", "Feet", "Finger", "Trinket", "Weapon", "Off Hand", "Ranged",
+}
+
+local EQUIP = {
+	INVTYPE_HEAD = "Head",
+	INVTYPE_NECK = "Neck",
+	INVTYPE_SHOULDER = "Shoulder",
+	INVTYPE_CLOAK = "Back",
+	INVTYPE_CHEST = "Chest",
+	INVTYPE_ROBE = "Chest",
+	INVTYPE_WRIST = "Wrist",
+	INVTYPE_HAND = "Hands",
+	INVTYPE_WAIST = "Waist",
+	INVTYPE_LEGS = "Legs",
+	INVTYPE_FEET = "Feet",
+	INVTYPE_FINGER = "Finger",
+	INVTYPE_TRINKET = "Trinket",
+	INVTYPE_WEAPON = "Weapon",
+	INVTYPE_WEAPONMAINHAND = "Weapon",
+	INVTYPE_2HWEAPON = "Weapon",
+	INVTYPE_SHIELD = "Off Hand",
+	INVTYPE_WEAPONOFFHAND = "Off Hand",
+	INVTYPE_HOLDABLE = "Off Hand",
+	INVTYPE_RANGED = "Ranged",
+	INVTYPE_RANGEDRIGHT = "Ranged",
+	INVTYPE_THROWN = "Ranged",
+	INVTYPE_RELIC = "Ranged",
+}
+
+function SK.Item.Slot(id)
+	if not id then
+		return nil
+	end
+	local equip
+	if C_Item and C_Item.GetItemInfo then
+		local _, _, _, _, _, _, _, _, loc = C_Item.GetItemInfo(id)
+		equip = loc
+	end
+	if (not equip or equip == "") and GetItemInfo then
+		local _, _, _, _, _, _, _, _, loc = GetItemInfo(id)
+		equip = loc
+	end
+	if (not equip or equip == "") and C_Item and C_Item.RequestLoadItemDataByID then
+		C_Item.RequestLoadItemDataByID(id)
+	end
+	return EQUIP[equip]
 end
 
 local function rawItemName(name)
