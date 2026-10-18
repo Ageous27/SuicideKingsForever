@@ -1,5 +1,5 @@
 local frame = SK.UI:CreateWindow("settings", "Settings")
-frame:SetSize(1100, 740)
+frame:SetSize(1100, 768)
 local body = frame.body
 
 local dropLabel = body:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -15,6 +15,33 @@ local belowBtn = CreateFrame("Button", nil, body, "UIPanelButtonTemplate")
 belowBtn:SetSize(220, 22)
 belowBtn:SetPoint("LEFT", lastBtn, "RIGHT", 8, 0)
 belowBtn:SetText("Below lowest bidder")
+
+local function showBidDropTip(owner)
+	GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+	GameTooltip:SetText("Bid drop")
+	GameTooltip:AddLine("Last place moves the winner to the bottom of that list. A sole bidder goes last.", 1, 1, 1, true)
+	GameTooltip:AddLine("Below lowest bidder moves the winner to the spot just under the lowest other bidder. A sole bidder still goes last.", 1, 1, 1, true)
+	GameTooltip:AddLine("Someone set to hold keeps their position. The winner can still move past them. Only the list this item is on moves.", 1, 1, 1, true)
+	GameTooltip:Show()
+end
+
+local function hookBidDropTip(owner)
+	owner:SetScript("OnEnter", function(self)
+		showBidDropTip(self)
+	end)
+	owner:SetScript("OnLeave", function()
+		GameTooltip:Hide()
+	end)
+end
+
+hookBidDropTip(lastBtn)
+hookBidDropTip(belowBtn)
+
+local dropHit = CreateFrame("Frame", nil, body)
+dropHit:SetPoint("TOPLEFT", 0, -4)
+dropHit:SetSize(84, 22)
+dropHit:EnableMouse(true)
+hookBidDropTip(dropHit)
 
 local function choiceMark(button)
 	local bar = button:CreateTexture(nil, "OVERLAY")
@@ -246,14 +273,26 @@ local awayMinutesLabel = body:CreateFontString(nil, "OVERLAY", "GameFontHighligh
 awayMinutesLabel:SetPoint("LEFT", awayBox, "RIGHT", 6, 0)
 awayMinutesLabel:SetText("minutes")
 
+local mapCheck = CreateFrame("CheckButton", nil, body)
+mapCheck:SetSize(24, 24)
+mapCheck:SetPoint("TOPLEFT", 0, -512)
+mapCheck:SetNormalTexture("Interface\\Buttons\\UI-CheckBox-Up")
+mapCheck:SetPushedTexture("Interface\\Buttons\\UI-CheckBox-Down")
+mapCheck:SetHighlightTexture("Interface\\Buttons\\UI-CheckBox-Highlight", "ADD")
+mapCheck:SetCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check")
+
+local mapLabel = body:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+mapLabel:SetPoint("LEFT", mapCheck, "RIGHT", 2, 0)
+mapLabel:SetText("Show minimap button")
+
 local resetBtn = CreateFrame("Button", nil, body, "UIPanelButtonTemplate")
 resetBtn:SetSize(200, 22)
-resetBtn:SetPoint("TOPLEFT", 4, -516)
+resetBtn:SetPoint("TOPLEFT", 4, -544)
 resetBtn:SetText("Reset all settings")
 
 local clearListBtn = CreateFrame("Button", nil, body, "UIPanelButtonTemplate")
 clearListBtn:SetSize(140, 22)
-clearListBtn:SetPoint("TOPLEFT", 4, -548)
+clearListBtn:SetPoint("TOPLEFT", 4, -576)
 clearListBtn:SetText("Clear list")
 
 local clearHistBtn = CreateFrame("Button", nil, body, "UIPanelButtonTemplate")
@@ -262,13 +301,13 @@ clearHistBtn:SetPoint("LEFT", clearListBtn, "RIGHT", 8, 0)
 clearHistBtn:SetText("Clear history")
 
 local foot = body:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-foot:SetPoint("TOPLEFT", 4, -580)
+foot:SetPoint("TOPLEFT", 4, -608)
 foot:SetWidth(460)
 foot:SetJustifyH("LEFT")
 foot:SetJustifyV("TOP")
 foot:SetWordWrap(true)
 foot:SetHeight(48)
-foot:SetText("Bid drop, the timer, end raid, the disenchanter, auto add, status defaults, and clear list stay with the officer. Opacity, window positions, and clear history stay on this character. Reset leaves the list and history.")
+foot:SetText("Bid drop, the timer, end raid, the disenchanter, auto add, status defaults, and clear list stay with the officer. Opacity, the minimap button, window positions, and clear history stay on this character. Reset leaves the list and history.")
 
 local QUALITY = {
 	[0] = "Poor",
@@ -919,6 +958,7 @@ function refresh()
 		deBtn:SetText(enchanter)
 	end
 	deBtn:SetEnabled(officer)
+	mapCheck:SetChecked(settings.minimapShown ~= false)
 	autoCheck:SetChecked(settings.autoAdd and true or false)
 	autoCheck:SetEnabled(officer)
 	qualBtn:SetText((QUALITY[settings.autoQuality or 2] or "Uncommon") .. " and up")
@@ -1086,6 +1126,9 @@ deBtn:SetScript("OnClick", function(self)
 	openMenu(self, labels, function(label)
 		SK.Settings:SetDisenchanter(label == "None" and "" or label)
 	end)
+end)
+mapCheck:SetScript("OnClick", function(self)
+	SK.Settings:SetMinimapShown(self:GetChecked())
 end)
 autoCheck:SetScript("OnClick", function(self)
 	SK.Settings:SetAutoAdd(self:GetChecked())

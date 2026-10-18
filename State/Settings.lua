@@ -208,6 +208,13 @@ function SK.Settings:SetAwayMinutes(minutes)
 	SK.Events:Fire("SK_SETTINGS")
 end
 
+function SK.Settings:SetMinimapShown(shown)
+	self:Get().minimapShown = shown and true or false
+	if SK.Minimap and SK.Minimap.Apply then
+		SK.Minimap:Apply()
+	end
+end
+
 function SK.Settings:SetOpacity(alpha)
 	alpha = tonumber(alpha) or 1
 	if alpha < 0 then
@@ -236,8 +243,12 @@ function SK.Settings:Reset()
 		settings.awayMinutes = 10
 	end
 	settings.opacity = 1
+	settings.minimapShown = true
 	if SK.UI and SK.UI.ResetLayout then
 		SK.UI:ResetLayout()
+	end
+	if SK.Minimap and SK.Minimap.Apply then
+		SK.Minimap:Apply()
 	end
 	SK.Events:Fire("SK_SETTINGS")
 	return nil

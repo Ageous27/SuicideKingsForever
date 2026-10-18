@@ -18,6 +18,7 @@ local DEFAULTS = {
 		nocallMode = "demote",
 		nocallSteps = 1,
 		awayMinutes = 10,
+		minimapShown = true,
 	},
 	history = {
 		events = {},
