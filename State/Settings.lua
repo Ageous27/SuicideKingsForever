@@ -216,7 +216,7 @@ function SK.Settings:SetMinimapShown(shown)
 end
 
 function SK.Settings:SetOpacity(alpha)
-	alpha = tonumber(alpha) or 1
+	alpha = tonumber(alpha) or 0.95
 	if alpha < 0 then
 		alpha = 0
 	elseif alpha > 1 then
@@ -242,7 +242,7 @@ function SK.Settings:Reset()
 		settings.nocallSteps = 1
 		settings.awayMinutes = 10
 	end
-	settings.opacity = 1
+	settings.opacity = 0.95
 	settings.minimapShown = true
 	if SK.UI and SK.UI.ResetLayout then
 		SK.UI:ResetLayout()

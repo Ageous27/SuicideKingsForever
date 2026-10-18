@@ -279,10 +279,17 @@ local function responseButton(index)
 	end
 	button.num = col(4, 22)
 	button.name = col(28, 110)
-	button.response = col(142, 70)
-	button.roll = col(214, 36)
-	button.pos = col(252, 36)
-	button.result = col(290, 120)
+	button.response = col(140, 78)
+	button.roll = col(220, 36)
+	button.pos = col(258, 36)
+	button.result = col(296, 120)
+	button.strike = button:CreateTexture(nil, "OVERLAY")
+	button.strike:SetDrawLayer("OVERLAY", 7)
+	button.strike:SetColorTexture(0.82, 0.82, 0.82, 0.95)
+	button.strike:SetHeight(1)
+	button.strike:SetPoint("LEFT", 4, 0)
+	button.strike:SetPoint("RIGHT", -8, 0)
+	button.strike:Hide()
 	liveButtons[index] = button
 	return button
 end
@@ -294,6 +301,9 @@ local function hideFrom(store, index)
 end
 
 local function resultText(row, winner)
+	if row.duplicate or row.choice == "Duplicate" then
+		return ""
+	end
 	if row.choice == "Pass" then
 		return "Pass"
 	end
@@ -598,19 +608,40 @@ function refresh()
 			local row = ordered[i]
 			local button = responseButton(i)
 			local listRow = SK.List:Find(row.name)
+			local duplicate = row.duplicate or row.choice == "Duplicate"
 			button.num:SetText(tostring(i))
 			button.name:SetText(row.name)
-			if listRow then
-				button.name:SetTextColor(classColor(listRow.class))
+			if duplicate then
+				button.name:SetTextColor(0.55, 0.55, 0.55)
+				button.num:SetTextColor(0.55, 0.55, 0.55)
+				button.response:SetTextColor(0.55, 0.55, 0.55)
+				button.roll:SetTextColor(0.55, 0.55, 0.55)
+				button.pos:SetTextColor(0.55, 0.55, 0.55)
+				button.result:SetTextColor(0.55, 0.55, 0.55)
+				button.response:SetText("Duplicate")
+				button.strike:Show()
 			else
-				button.name:SetTextColor(1, 1, 1)
+				button.num:SetTextColor(1, 1, 1)
+				button.response:SetTextColor(1, 1, 1)
+				button.roll:SetTextColor(1, 1, 1)
+				button.pos:SetTextColor(1, 1, 1)
+				button.result:SetTextColor(1, 1, 1)
+				if listRow then
+					button.name:SetTextColor(classColor(listRow.class))
+				else
+					button.name:SetTextColor(1, 1, 1)
+				end
+				button.response:SetText(row.choice or "")
+				button.strike:Hide()
 			end
-			button.response:SetText(row.choice or "")
 			button.roll:SetText(row.roll and tostring(row.roll) or "-")
 			button.pos:SetText(row.position and tostring(row.position) or "-")
 			button.result:SetText(resultText(row, chosen))
-			paint(button, chosen and chosen.name == row.name)
+			paint(button, (not duplicate) and chosen and chosen.name == row.name)
 			button:SetScript("OnClick", function()
+				if duplicate then
+					return
+				end
 				if not collecting and row.choice ~= "Pass" then
 					SK.Session:SetOverride(row.name)
 				end

@@ -89,6 +89,7 @@ function SK.Rules.Priority.Decide(responses, seeding, rolloff)
 	local passes = {}
 	local unseededMs = {}
 	local unseededOs = {}
+	local duplicates = {}
 	local allowed
 	local tierOnly
 	if rolloff and rolloff.names then
@@ -98,7 +99,11 @@ function SK.Rules.Priority.Decide(responses, seeding, rolloff)
 	for i = 1, #(responses or {}) do
 		local row = responses[i]
 		local key = string.lower(row.name)
-		if not allowed or allowed[key] then
+		if row.duplicate or row.choice == "Duplicate" then
+			if not allowed or allowed[key] then
+				table.insert(duplicates, row)
+			end
+		elseif not allowed or allowed[key] then
 			local choice = row.choice
 			if tierOnly and choice ~= tierOnly and choice ~= "Pass" then
 				choice = nil
@@ -174,5 +179,6 @@ function SK.Rules.Priority.Decide(responses, seeding, rolloff)
 		appendAll(ordered, os)
 	end
 	appendAll(ordered, passes)
+	appendAll(ordered, duplicates)
 	return { ordered = ordered, winner = winner, tie = tie }
 end

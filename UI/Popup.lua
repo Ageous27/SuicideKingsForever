@@ -26,7 +26,11 @@ local function applyPopupLayout()
 	local point, rel, x, y = popupPoint()
 	frame:SetUserPlaced(false)
 	frame:ClearAllPoints()
-	frame:SetPoint(point, UIParent, rel, x, y)
+	local ok = pcall(frame.SetPoint, frame, point, UIParent, rel or "CENTER", x or 0, y or 0)
+	if not ok then
+		frame:ClearAllPoints()
+		frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+	end
 end
 
 local function rememberPopupLayout()
@@ -90,25 +94,56 @@ barText:SetText("15s")
 
 local footnote = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 footnote:SetPoint("BOTTOM", 0, 16)
-footnote:SetText("You can change this until the timer ends.")
+footnote:SetText("Pick once. This window closes after your choice.")
 
 local buttons = {}
 local order = { "Bid", "MS", "OS", "Pass" }
 local current = nil
+local picked = nil
+
+local function lockButtons()
+	for i = 1, #order do
+		local button = buttons[order[i]]
+		if button then
+			button:Disable()
+		end
+	end
+end
+
+local function unlockButtons()
+	for i = 1, #order do
+		local button = buttons[order[i]]
+		if button then
+			button:Enable()
+		end
+	end
+end
+
+local function closeAfterChoice()
+	frame.dismissed = frame.token
+	frame:Hide()
+end
 
 local function sendChoice(choice)
-	local roll
+	if picked then
+		return
+	end
+	picked = choice
+	current = choice
+	lockButtons()
+	closeAfterChoice()
 	if choice == "MS" or choice == "OS" then
-		roll = math.random(1, 100)
+		if SK.Chat and SK.Chat.RollFor then
+			SK.Chat:RollFor(choice)
+		end
+		return
 	end
 	local name = SK.ShortName(UnitName("player"))
 	if SK.Session:IsOfficer() then
-		SK.Session:Respond(name, choice, roll, "popup")
-	else
-		SK.Sync:SendResponse(choice, roll)
+		SK.Session:Respond(name, choice, nil, "popup")
+	elseif SK.Sync and SK.Sync.SendResponse then
+		SK.Sync:SendResponse(choice, nil)
 	end
-	current = choice
-	footnote:SetText("Your choice: " .. choice .. (roll and (" " .. roll) or "") .. ". You can change this until the timer ends.")
 end
 
 for i = 1, #order do
@@ -123,17 +158,21 @@ for i = 1, #order do
 end
 
 local function personLine(name)
-	local row = SK.List:Find(SK.ShortName(name))
+	name = SK.ShortName(name or "")
+	if name == "" then
+		name = "You"
+	end
+	local row = SK.List:Find(name)
 	if not row then
 		return name
 	end
 	if row.pug then
-		return row.name .. ", " .. row.class .. ", pug / fill"
+		return row.name .. ", " .. (row.class or "") .. ", pug / fill"
 	end
 	if not row.position then
-		return row.name .. ", " .. row.class .. ", unseeded"
+		return row.name .. ", " .. (row.class or "") .. ", unseeded"
 	end
-	return row.name .. ", " .. row.class .. ", position " .. row.position
+	return row.name .. ", " .. (row.class or "") .. ", position " .. row.position
 end
 
 local function liveToken(live)
@@ -141,6 +180,7 @@ local function liveToken(live)
 		return nil
 	end
 	return table.concat({
+		live.nonce or "",
 		live.state or "",
 		tostring(live.endsAt or 0),
 		live.listId or "",
@@ -161,22 +201,34 @@ local function refresh(reason)
 	local name = UnitName("player")
 	local open = live and (live.state == "open" or live.state == "rolloff") and time() <= (live.endsAt or 0)
 	local allowed = open and SK.Session:ChoicesFor(name) or {}
-	local had = frame.hadChoices and true or false
-	local gained = reason == "list" and not had
 	local token = liveToken(live)
-	local incoming = reason == "start" or reason == "rolloff" or reason == "remote"
-	local show = open and #allowed > 0 and token ~= frame.dismissed and (incoming or frame:IsShown() or gained)
+	local officerStarting = reason == "start" and SK.Session:IsOfficer()
+	local show = open and token ~= frame.dismissed and (#allowed > 0 or officerStarting)
 	frame.hadChoices = open and #allowed > 0 and true or false
-	if show then
-		frame.token = token
-	end
 	if not show then
 		if frame:IsShown() and not open then
 			frame:Hide()
 		end
 		return
 	end
-	itemText:SetText(SK.Item.Display(live))
+	if not frame:IsShown() or frame.token ~= token then
+		picked = nil
+		current = nil
+		unlockButtons()
+		if #allowed == 0 then
+			footnote:SetText("You are not eligible to roll on this list.")
+		else
+			footnote:SetText("Pick once. This window closes after your choice.")
+		end
+	end
+	frame.token = token
+	frame:SetFrameStrata("FULLSCREEN_DIALOG")
+	if not frame:IsShown() then
+		applyPopupLayout()
+		frame:Show()
+	end
+	frame:Raise()
+	itemText:SetText(SK.Item.Display(live) or "Item")
 	whoText:SetText(personLine(name))
 	local duration = live.duration or 15
 	if duration < 1 then
@@ -211,13 +263,19 @@ local function refresh(reason)
 			button:Hide()
 		end
 	end
-	if not frame:IsShown() then
-		applyPopupLayout()
-		frame:Show()
-	end
+end
+
+SK.UI = SK.UI or {}
+function SK.UI.ShowRollPopup(reason)
+	refresh(reason or "start")
 end
 
 SK.Events:On("SK_READY", applyPopupLayout)
+SK.Events:On("SK_OWN_ROLL", function(choice, roll)
+	if current == choice and roll then
+		footnote:SetText("Your choice: " .. choice .. " " .. roll)
+	end
+end)
 SK.Events:On("SK_SESSION", refresh)
 SK.Events:On("SK_LIST_CHANGED", function()
 	refresh("list")
@@ -230,7 +288,8 @@ frame:SetScript("OnUpdate", function()
 	if not live or time() > (live.endsAt or 0) then
 		frame:Hide()
 		current = nil
-		footnote:SetText("You can change this until the timer ends.")
+		picked = nil
+		footnote:SetText("Pick once. This window closes after your choice.")
 		return
 	end
 	local duration = live.duration or 15

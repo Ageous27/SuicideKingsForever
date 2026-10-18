@@ -91,10 +91,6 @@ function SK.Sync:Broadcast()
 		return
 	end
 	if SK.Teams then
-		local lockedId = SK.Session.LockedTeam and SK.Session:LockedTeam()
-		if lockedId and SK.Teams:TeamId() ~= lockedId then
-			return
-		end
 		self:BroadcastTeam()
 		return
 	end
@@ -134,10 +130,6 @@ function SK.Sync:BroadcastTeam(lockedFlag)
 		return
 	end
 	if lockedFlag == nil and not SK.Session:IsLocked() then
-		return
-	end
-	local lockedId = SK.Session.LockedTeam and SK.Session:LockedTeam()
-	if lockedFlag == nil and lockedId and SK.Teams:TeamId() ~= lockedId then
 		return
 	end
 	local pieces = SK.Teams:Pieces(lockedFlag)

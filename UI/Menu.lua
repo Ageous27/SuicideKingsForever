@@ -56,7 +56,7 @@ end
 function SK.UI:Opacity()
 	local alpha = 1
 	if type(SKDB) == "table" and type(SKDB.settings) == "table" then
-		alpha = tonumber(SKDB.settings.opacity) or 1
+		alpha = tonumber(SKDB.settings.opacity) or 0.95
 	end
 	if alpha < 0 then
 		alpha = 0

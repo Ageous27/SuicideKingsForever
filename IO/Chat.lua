@@ -60,39 +60,175 @@ local function onTalk(text, sender)
 	end
 end
 
-local function onSystem(text)
-	if not SK.Session:IsOfficer() then
-		return
-	end
-	if type(issecretvalue) == "function" and issecretvalue(text) then
-		return
-	end
+local pendingRoll = nil
+local rollWatch = CreateFrame("Frame")
+rollWatch:Hide()
+
+local function plainRollText(text)
+	text = string.gsub(text, "|c%x%x%x%x%x%x%x%x", "")
+	text = string.gsub(text, "|r", "")
+	text = string.gsub(text, "|H.-|h(.-)|h", "%1")
+	text = string.gsub(text, "|T.-|t", "")
+	text = string.gsub(text, "%[(.-)%]", "%1")
+	return SK.Trim(text)
+end
+
+local function parseRoll(text)
 	if type(text) ~= "string" then
-		return
+		return nil
 	end
-	local name, roll, low, high = string.match(text, "^(%S+) rolls (%d+) %((%d+)%-(%d+)%)$")
-	if not name then
-		roll, low, high = string.match(text, "^You roll (%d+) %((%d+)%-(%d+)%)$")
-		if roll then
-			name = UnitName("player")
-		end
+	text = plainRollText(text)
+	local name, roll, low, high = string.match(text, "^(.-) rolls? a? ?(%d+) %((%d+).(%d+)%)")
+	if not roll then
+		return nil
 	end
-	if not name then
-		return
-	end
+	name = SK.Trim(name or "")
+	name = string.gsub(name, "^[%s%p]+", "")
+	name = string.gsub(name, "[%s%p]+$", "")
+	roll = tonumber(roll)
 	low = tonumber(low)
 	high = tonumber(high)
+	if name == "" or not roll or not low or not high then
+		return nil
+	end
+	return name, roll, low, high
+end
+
+local function isSelf(name)
+	name = string.lower(SK.Trim(name or ""))
+	if name == "you" or name == "your" or string.find(name, "%f[%a]you%f[%A]") then
+		return true
+	end
+	local mine = string.lower(SK.ShortName(UnitName("player") or ""))
+	if mine == "" then
+		return false
+	end
+	return name == mine or string.lower(SK.ShortName(name)) == mine
+end
+
+local function scanChatRoll(afterIndex)
+	local chat = DEFAULT_CHAT_FRAME
+	if not chat or not chat.GetNumMessages or not chat.GetMessageInfo then
+		return nil
+	end
+	local count = chat:GetNumMessages()
+	if type(count) ~= "number" or count < 1 then
+		return nil
+	end
+	afterIndex = afterIndex or 0
+	local stop = count - 12
+	if stop < afterIndex + 1 then
+		stop = afterIndex + 1
+	end
+	if stop < 1 then
+		stop = 1
+	end
+	for i = count, stop, -1 do
+		if i > afterIndex then
+			local ok, text = pcall(chat.GetMessageInfo, chat, i)
+			local name, roll, low, high
+			if ok then
+				name, roll, low, high = parseRoll(text)
+			end
+			if name then
+				return name, roll, low, high
+			end
+		end
+	end
+	return nil
+end
+
+local rollChoice
+
+local function recordRoll(name, roll, low, high)
+	local mine = isSelf(name)
+	if mine then
+		name = UnitName("player")
+	end
+	if mine and pendingRoll and high == pendingRoll.high and time() - (pendingRoll.at or 0) <= 5 then
+		local choice = pendingRoll.choice
+		pendingRoll = nil
+		rollWatch:Hide()
+		if SK.Session:IsOfficer() then
+			SK.Session:Respond(name, choice, roll, "roll")
+		elseif SK.Sync and SK.Sync.SendResponse then
+			SK.Sync:SendResponse(choice, roll)
+		end
+		if SK.Events then
+			SK.Events:Fire("SK_OWN_ROLL", choice, roll)
+		end
+		return
+	end
+	if not SK.Session:IsOfficer() or mine then
+		return
+	end
+	local choice = rollChoice(low, high)
+	if not choice then
+		return
+	end
+	SK.Session:Respond(name, choice, roll, "roll")
+end
+
+function SK.Chat:RollFor(choice)
+	local high = choice == "OS" and 99 or 100
+	local seen = 0
+	local chat = DEFAULT_CHAT_FRAME
+	if chat and chat.GetNumMessages then
+		seen = chat:GetNumMessages() or 0
+	end
+	pendingRoll = { choice = choice, high = high, at = time(), seen = seen }
+	rollWatch.tries = 0
+	rollWatch:Show()
+	if RandomRoll then
+		RandomRoll(1, high)
+		return
+	end
+	local box = chat and chat.editBox
+	if box and ChatEdit_SendText then
+		box:SetText("/roll " .. high)
+		ChatEdit_SendText(box, 1)
+	end
+end
+
+rollChoice = function(low, high)
 	local choice = SK.Gargul and SK.Gargul:ChoiceForRange(low, high) or nil
 	if not choice and low == 1 and high == 100 then
 		choice = "MS"
 	elseif not choice and low == 1 and high == 99 then
 		choice = "OS"
 	end
-	if not choice then
+	return choice
+end
+
+local function onSystem(text)
+	local secret = type(issecretvalue) == "function" and issecretvalue(text)
+	if not secret then
+		local ok, name, roll, low, high = pcall(parseRoll, text)
+		if ok and name then
+			recordRoll(name, roll, low, high)
+			return
+		end
+	end
+	if not pendingRoll then
 		return
 	end
-	SK.Session:Respond(name, choice, tonumber(roll), "roll")
+	local name, roll, low, high = scanChatRoll(pendingRoll.seen)
+	if name and isSelf(name) and high == pendingRoll.high then
+		recordRoll(name, roll, low, high)
+	end
 end
+
+rollWatch:SetScript("OnUpdate", function(self)
+	self.tries = (self.tries or 0) + 1
+	if not pendingRoll or self.tries > 20 then
+		self:Hide()
+		return
+	end
+	local name, roll, low, high = scanChatRoll(pendingRoll.seen)
+	if name and isSelf(name) and high == pendingRoll.high then
+		recordRoll(name, roll, low, high)
+	end
+end)
 
 SK.Events:On("SK_ANNOUNCE", function(text)
 	if SK.Session:IsOfficer() then
@@ -110,3 +246,10 @@ SK.Events:Register("CHAT_MSG_WHISPER", onTalk)
 SK.Events:Register("CHAT_MSG_SYSTEM", function(text)
 	onSystem(text)
 end)
+
+if ChatFrame_AddMessageEventFilter then
+	ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", function(_, _, text)
+		onSystem(text)
+		return false
+	end)
+end

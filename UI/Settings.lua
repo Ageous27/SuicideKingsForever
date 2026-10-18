@@ -161,7 +161,7 @@ opacityLabel:SetText("Background opacity")
 
 local opacityValue = body:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 opacityValue:SetPoint("TOPLEFT", 400, -286)
-opacityValue:SetText("100%")
+opacityValue:SetText("95%")
 
 local opacitySlider = CreateFrame("Slider", nil, body)
 opacitySlider:SetPoint("TOPLEFT", 160, -282)
@@ -169,7 +169,7 @@ opacitySlider:SetSize(220, 16)
 opacitySlider:SetOrientation("HORIZONTAL")
 opacitySlider:SetMinMaxValues(0, 100)
 opacitySlider:SetValueStep(5)
-opacitySlider:SetValue(100)
+opacitySlider:SetValue(95)
 if opacitySlider.SetObeyStepOnDrag then
 	opacitySlider:SetObeyStepOnDrag(true)
 end
@@ -246,6 +246,7 @@ for i = 1, #STATUS_ROWS do
 		raise = raiseBtn,
 		demote = demoteBtn,
 		box = stepsBox,
+		steps = stepsLabel,
 	}
 end
 
@@ -446,13 +447,18 @@ teamHead:SetText("Raid teams")
 
 local teamScroll = CreateFrame("ScrollFrame", nil, body)
 teamScroll:SetPoint("TOPLEFT", 496, -30)
-teamScroll:SetSize(180, 160)
+teamScroll:SetSize(180, 128)
 local teamContent = CreateFrame("Frame", nil, teamScroll)
 teamContent:SetSize(168, 28)
 teamScroll:SetScrollChild(teamContent)
 if teamScroll.SetClipsChildren then
 	teamScroll:SetClipsChildren(true)
 end
+
+local lockRaidBtn = CreateFrame("Button", nil, body, "UIPanelButtonTemplate")
+lockRaidBtn:SetSize(160, 22)
+lockRaidBtn:SetPoint("TOPLEFT", 500, -164)
+lockRaidBtn:SetText("Lock raid")
 
 local newTeamBtn = CreateFrame("Button", nil, body, "UIPanelButtonTemplate")
 newTeamBtn:SetSize(160, 22)
@@ -895,6 +901,20 @@ newTeamBtn:SetScript("OnClick", function()
 		return SK.Teams:AddTeam(text)
 	end)
 end)
+lockRaidBtn:SetScript("OnClick", function()
+	if not SK.Session:IsOfficer() then
+		return
+	end
+	local err
+	if SK.Session:IsLocked() then
+		err = SK.Session:UnlockRaid()
+	else
+		err = SK.Session:LockRaid()
+	end
+	if err then
+		SK.Print(err)
+	end
+end)
 newListBtn:SetScript("OnClick", openNewList)
 slotBtn:SetScript("OnClick", function(self)
 	local labels = SK.Item.SLOTS or {}
@@ -937,9 +957,9 @@ end)
 function refresh()
 	local settings = SK.Settings:Get()
 	holdOpacity = true
-	opacitySlider:SetValue((tonumber(settings.opacity) or 1) * 100)
+	opacitySlider:SetValue((tonumber(settings.opacity) or 0.95) * 100)
 	holdOpacity = false
-	opacityValue:SetText(tostring(math.floor(((tonumber(settings.opacity) or 1) * 100) + 0.5)) .. "%")
+	opacityValue:SetText(tostring(math.floor(((tonumber(settings.opacity) or 0.95) * 100) + 0.5)) .. "%")
 	local officer = SK.Session:IsOfficer()
 	paintChoice(lastBtn, settings.bidDrop ~= "below", officer)
 	paintChoice(belowBtn, settings.bidDrop == "below", officer)
@@ -970,21 +990,43 @@ function refresh()
 		paintChoice(widget.hold, mode == "hold", officer)
 		paintChoice(widget.raise, mode == "raise", officer)
 		paintChoice(widget.demote, mode == "demote", officer)
-		widget.box:SetEnabled(officer)
+		local showSteps = mode == "demote"
+		widget.box:SetShown(showSteps)
+		widget.steps:SetShown(showSteps)
+		widget.box:SetEnabled(officer and showSteps)
 		if not widget.box:HasFocus() then
 			widget.box:SetText(tostring(steps))
 		end
 	end
 	resetBtn:SetEnabled(true)
-	clearListBtn:SetEnabled(officer and not SK.Session:IsLocked())
+	local viewLocked = SK.Session:TeamIsLocked()
+	clearListBtn:SetEnabled(officer and not viewLocked)
 	clearHistBtn:SetEnabled(true)
-	local structure = officer and not SK.Session:IsLocked() and not SK.Session:Live()
+	local live = SK.Session:Live()
+	local rulesOpen = officer and not viewLocked
 	hideContext()
-	newTeamBtn:SetEnabled(structure)
-	newListBtn:SetEnabled(structure)
-	slotBtn:SetEnabled(officer)
-	itemEdit:SetEnabled(officer)
-	itemAdd:SetEnabled(officer)
+	newTeamBtn:SetEnabled(officer and not live)
+	newListBtn:SetEnabled(rulesOpen and not live)
+	slotBtn:SetEnabled(rulesOpen)
+	itemEdit:SetEnabled(rulesOpen)
+	itemAdd:SetEnabled(rulesOpen)
+	if SK.Session:IsLocked() then
+		lockRaidBtn:SetText("Unlock raid")
+	else
+		lockRaidBtn:SetText("Lock raid")
+	end
+	lockRaidBtn:SetEnabled(officer)
+	if viewLocked then
+		listHead:SetTextColor(0.45, 0.45, 0.45)
+		ruleTitle:SetTextColor(0.45, 0.45, 0.45)
+		rulePane:SetBackdropBorderColor(0.35, 0.35, 0.35, 0.7)
+		ruleBg:SetColorTexture(0.06, 0.05, 0.04, 0.45)
+	else
+		listHead:SetTextColor(1, 0.82, 0)
+		ruleTitle:SetTextColor(1, 0.82, 0)
+		rulePane:SetBackdropBorderColor(0.75, 0.62, 0.28, 0.9)
+		ruleBg:SetColorTexture(0.06, 0.05, 0.04, 0.92)
+	end
 	local teamId = SK.Teams:TeamId()
 	local catalog = SK.Teams:Catalog()
 	listHead:SetText("Lists on " .. SK.Teams:TeamName())
@@ -992,9 +1034,16 @@ function refresh()
 		local entry = catalog[i]
 		local row = teamRow(i)
 		local selected = entry.id == teamId
-		paintRow(row, selected, entry.name)
+		local label = entry.name
+		if SK.Session:TeamIsLocked(entry.id) then
+			label = entry.name .. "  ·  locked"
+		end
+		paintRow(row, selected, label)
 		row:SetScript("OnClick", function(_, mouse)
 			if mouse == "RightButton" then
+				if not officer or SK.Session:TeamIsLocked(entry.id) then
+					return
+				end
 				local teamCount = #SK.Teams:Catalog()
 				openRowMenu(teamCount > 1, function()
 					showAsk("Rename team", "Rename", entry.name, function(text)
@@ -1008,11 +1057,9 @@ function refresh()
 				end)
 				return
 			end
-			if officer then
-				local err = SK.Teams:SelectTeam(entry.id)
-				if err then
-					SK.Print(err)
-				end
+			local err = SK.Teams:SelectTeam(entry.id)
+			if err then
+				SK.Print(err)
 			end
 		end)
 		row:Show()
@@ -1030,6 +1077,9 @@ function refresh()
 		paintRow(row, selected, entry.name, SK.Teams:RuleBlurb(entry.id))
 		row:SetScript("OnClick", function(_, mouse)
 			if mouse == "RightButton" then
+				if not officer or viewLocked then
+					return
+				end
 				openRowMenu(not entry.fixed, function()
 					showAsk("Rename list", "Rename", entry.name, function(text)
 						return SK.Teams:RenameList(text, entry.id)
@@ -1072,11 +1122,12 @@ function refresh()
 		chip:ClearAllPoints()
 		chip:SetPoint("TOPLEFT", 10 + col * 154, -32 - line * 24)
 		chip:SetText(rule.label .. "  x")
+		chip:SetEnabled(rulesOpen)
 		chip:SetScript("OnClick", function(_, mouse)
 			if mouse ~= "RightButton" and mouse ~= "LeftButton" then
 				return
 			end
-			if not SK.Session:IsOfficer() then
+			if not rulesOpen then
 				return
 			end
 			showContext(false, nil, function()

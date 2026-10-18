@@ -13,7 +13,7 @@ local function className(displayName, classFile)
 			end
 		end
 	end
-	return "Warrior"
+	return ""
 end
 
 local function add(out, name, displayName, classFile)
@@ -57,6 +57,55 @@ function SK.Roster:Resolve(name)
 	return nil, nil, nil
 end
 
+function SK.Roster:RaidMembers()
+	local list = {}
+	if not IsInRaid or not IsInRaid() or not GetRaidRosterInfo or not GetNumGroupMembers then
+		return list
+	end
+	for i = 1, GetNumGroupMembers() do
+		local name, _, _, _, displayName, classFile = GetRaidRosterInfo(i)
+		name = SK.ShortName(name)
+		if name ~= "" then
+			table.insert(list, {
+				name = name,
+				class = className(displayName, classFile),
+			})
+		end
+	end
+	table.sort(list, function(a, b)
+		return a.name < b.name
+	end)
+	return list
+end
+
+local rosterBooted = false
+local wasInRaid = false
+local formedUntil = 0
+
+function SK.Roster:Observe()
+	local inRaid = IsInRaid and IsInRaid() and true or false
+	if not rosterBooted then
+		rosterBooted = true
+		wasInRaid = inRaid
+		return "boot"
+	end
+	if not inRaid then
+		wasInRaid = false
+		formedUntil = 0
+		return "away"
+	end
+	if not wasInRaid then
+		wasInRaid = true
+		formedUntil = time() + 3
+		return "formed"
+	end
+	if formedUntil > 0 and time() <= formedUntil then
+		return "settle"
+	end
+	formedUntil = 0
+	return "raid"
+end
+
 function SK.Roster:Members()
 	local out = {}
 	if IsInRaid and IsInRaid() and GetRaidRosterInfo and GetNumGroupMembers then
@@ -79,8 +128,8 @@ function SK.Roster:Members()
 end
 
 local function check()
-	if SK.Session and SK.Session.CheckJoins then
-		SK.Session:CheckJoins()
+	if SK.Session and SK.Session.OnRoster then
+		SK.Session:OnRoster()
 	end
 end
 

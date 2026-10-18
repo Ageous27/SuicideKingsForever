@@ -5,7 +5,11 @@ local function samePlayer(name)
 	if type(name) ~= "string" or name == "" then
 		return false
 	end
-	return SK.ShortName(name) == SK.ShortName(UnitName("player"))
+	local mine = SK.ShortName(UnitName("player") or "")
+	if mine == "" then
+		return false
+	end
+	return string.lower(SK.ShortName(name)) == string.lower(mine)
 end
 
 local function methodIsMaster(method)
@@ -18,26 +22,58 @@ local function methodIsMaster(method)
 	return type(method) == "number" and method == 2
 end
 
-local function playerIsListedMaster(partyId, raidId)
-	if type(raidId) == "number" and raidId > 0 and GetRaidRosterInfo then
-		return samePlayer(GetRaidRosterInfo(raidId))
+local function unitIsPlayer(unit)
+	if type(unit) ~= "string" or unit == "" or not UnitExists or not UnitExists(unit) or not UnitIsUnit then
+		return nil
 	end
-	if type(partyId) == "number" then
-		if partyId == 0 then
-			return true
+	return UnitIsUnit("player", unit) and true or false
+end
+
+local function raidSlotIsPlayer(index)
+	if type(index) ~= "number" or index <= 0 then
+		return nil
+	end
+	local byUnit = unitIsPlayer("raid" .. index)
+	if byUnit ~= nil then
+		return byUnit
+	end
+	if GetRaidRosterInfo then
+		local name = GetRaidRosterInfo(index)
+		if type(name) == "string" and name ~= "" then
+			return samePlayer(name)
 		end
-		if partyId > 0 and UnitIsUnit then
-			return UnitIsUnit("player", "party" .. partyId) and true or false
+	end
+	return nil
+end
+
+local function playerIsListedMaster(partyId, raidId)
+	if partyId == 0 or raidId == 0 then
+		return true
+	end
+	if IsInRaid and IsInRaid() then
+		local byRaid = raidSlotIsPlayer(raidId)
+		if byRaid ~= nil then
+			return byRaid
 		end
+		local byPartyNumber = raidSlotIsPlayer(partyId)
+		if byPartyNumber ~= nil then
+			return byPartyNumber
+		end
+		return nil
+	end
+	if type(partyId) == "number" and partyId > 0 then
+		return unitIsPlayer("party" .. partyId)
+	end
+	local byUnit = unitIsPlayer(partyId)
+	if byUnit ~= nil then
+		return byUnit
 	end
 	if type(partyId) == "string" and partyId ~= "" then
-		if UnitExists and UnitExists(partyId) then
-			return UnitIsUnit("player", partyId) and true or false
-		end
 		return samePlayer(partyId)
 	end
-	if type(raidId) == "string" and raidId ~= "" and UnitExists and UnitExists(raidId) then
-		return UnitIsUnit("player", raidId) and true or false
+	local byRaidUnit = unitIsPlayer(raidId)
+	if byRaidUnit ~= nil then
+		return byRaidUnit
 	end
 	return nil
 end
@@ -46,25 +82,13 @@ local function masterLooterIsPlayer()
 	if C_PartyInfo and C_PartyInfo.GetLootMethod then
 		local ok, method, partyId, raidId = pcall(C_PartyInfo.GetLootMethod)
 		if ok and methodIsMaster(method) then
-			local listed = playerIsListedMaster(partyId, raidId)
-			if listed ~= nil then
-				return listed
-			end
+			return playerIsListedMaster(partyId, raidId)
 		end
 	end
 	if GetLootMethod then
 		local method, partyIndex, raidIndex = GetLootMethod()
-		if method == "master" then
-			if type(raidIndex) == "number" and raidIndex > 0 and GetRaidRosterInfo then
-				return samePlayer(GetRaidRosterInfo(raidIndex))
-			end
-			if partyIndex == 0 then
-				return true
-			end
-			if type(partyIndex) == "number" and partyIndex > 0 and UnitIsUnit then
-				return UnitIsUnit("player", "party" .. partyIndex) and true or false
-			end
-			return false
+		if methodIsMaster(method) then
+			return playerIsListedMaster(partyIndex, raidIndex)
 		end
 	end
 	return nil
@@ -100,6 +124,20 @@ function SK.Session:LockedTeam()
 		return teamId
 	end
 	return nil
+end
+
+function SK.Session:TeamIsLocked(teamId)
+	if not self:IsLocked() then
+		return false
+	end
+	local lockedId = self:LockedTeam()
+	if not lockedId then
+		return true
+	end
+	if not teamId and SK.Teams then
+		teamId = SK.Teams:TeamId()
+	end
+	return teamId == lockedId
 end
 
 function SK.Session:Unlock()
@@ -313,14 +351,42 @@ function SK.Session:Select(id)
 	changed("select")
 end
 
-local function responseIndex(live, name)
+local function removeResponses(live, name)
+	local key = string.lower(name)
+	local i = 1
+	while i <= #live.responses do
+		if string.lower(live.responses[i].name) == key then
+			table.remove(live.responses, i)
+		else
+			i = i + 1
+		end
+	end
+end
+
+local function firstResponse(live, name)
 	local key = string.lower(name)
 	for i = 1, #live.responses do
-		if string.lower(live.responses[i].name) == key then
-			return i
+		local row = live.responses[i]
+		if string.lower(row.name) == key and not row.duplicate then
+			return row
 		end
 	end
 	return nil
+end
+
+local function recentSameRoll(live, name, roll)
+	if not roll then
+		return false
+	end
+	local key = string.lower(name)
+	local now = time()
+	for i = 1, #live.responses do
+		local row = live.responses[i]
+		if string.lower(row.name) == key and row.roll == roll and (now - (row.at or 0)) <= 3 then
+			return true
+		end
+	end
+	return false
 end
 
 function SK.Session:Decision()
@@ -401,13 +467,20 @@ function SK.Session:Respond(name, choice, roll, source)
 		pug = row and row.pug or false,
 		unseeded = row and (not row.pug) and (not row.position) or false,
 		source = source or "popup",
+		at = time(),
 	}
-	local index = responseIndex(live, record.name)
-	if index then
-		live.responses[index] = record
-	else
-		table.insert(live.responses, record)
+	if recentSameRoll(live, record.name, record.roll) then
+		return
 	end
+	if firstResponse(live, record.name) then
+		if choice ~= "MS" and choice ~= "OS" then
+			return
+		end
+		record.duplicate = true
+		record.original = choice
+		record.choice = "Duplicate"
+	end
+	table.insert(live.responses, record)
 	changed("response")
 end
 
@@ -474,6 +547,7 @@ function SK.Session:Start()
 		duration = duration,
 		countdownFrom = countdown,
 		endsAt = time() + duration,
+		nonce = tostring(time()) .. tostring(math.random(1000, 9999)),
 		state = "open",
 		responses = {},
 		rolloff = nil,
@@ -493,6 +567,9 @@ function SK.Session:Start()
 	db().note = SK.Item.Display(item) .. " is live on " .. listLabel .. ". " .. duration .. " seconds."
 	say(shownItem(item) .. " — " .. listLabel .. " — bid, or MS /roll 100, or OS /roll 99. " .. duration .. " seconds.")
 	changed("start")
+	if SK.UI and SK.UI.ShowRollPopup then
+		SK.UI.ShowRollPopup("start")
+	end
 	return nil
 end
 
@@ -501,7 +578,7 @@ local function winnerRecord(live, decision)
 		local key = string.lower(live.override)
 		for i = 1, #live.responses do
 			local row = live.responses[i]
-			if string.lower(row.name) == key and row.choice ~= "Pass" then
+			if string.lower(row.name) == key and not row.duplicate and row.choice ~= "Pass" then
 				return row
 			end
 		end
@@ -534,10 +611,7 @@ local function beginRolloff(live, tie)
 		local person = tie.names[i]
 		names[string.lower(person.name)] = true
 		table.insert(label, person.name)
-		local index = responseIndex(live, person.name)
-		if index then
-			table.remove(live.responses, index)
-		end
+		removeResponses(live, person.name)
 	end
 	live.rolloff = { tier = tie.tier, names = names }
 	live.state = "rolloff"
@@ -606,6 +680,17 @@ local function inInstance()
 		return false
 	end
 	return kind == "raid" or kind == "party"
+end
+
+local function inRaidZone()
+	if not GetInstanceInfo then
+		return false
+	end
+	local ok, _, kind = pcall(GetInstanceInfo)
+	if not ok then
+		return false
+	end
+	return kind == "raid"
 end
 
 local function raidIsOpen(session)
@@ -914,6 +999,9 @@ function SK.Session:ApplyRemote(state, endsAt, tier, names, link)
 		teamName = SK.Teams and SK.Teams:TeamName() or nil,
 	}
 	changed("remote")
+	if SK.UI and SK.UI.ShowRollPopup then
+		SK.UI.ShowRollPopup("remote")
+	end
 end
 
 function SK.Session:LockRaid()
@@ -928,7 +1016,7 @@ function SK.Session:LockRaid()
 	local filled = {}
 	if SK.Teams then
 		SK.Teams:Flush()
-		filled = SK.Teams:FillFromRaid()
+		filled = SK.Teams:MatchRaid()
 	end
 	local list = SK.Teams and SK.Teams:People() or SK.Saved:List()
 	for i = 1, #list do
@@ -1012,6 +1100,9 @@ function SK.Session:CheckJoins()
 	if not self:IsOfficer() or not self:IsLocked() then
 		return
 	end
+	if not IsInRaid or not IsInRaid() or not inRaidZone() then
+		return
+	end
 	if not SK.Roster or not SK.Roster.Members then
 		return
 	end
@@ -1049,6 +1140,59 @@ function SK.Session:CheckJoins()
 	if added then
 		SK.Events:Fire("SK_JOIN")
 	end
+end
+
+function SK.Session:AbsorbRaidStart()
+	if not self:IsOfficer() or not self:IsLocked() then
+		return
+	end
+	if not SK.Roster or not SK.Roster.RaidMembers then
+		return
+	end
+	local session = SK.Saved:Session()
+	session.raidAtLock = session.raidAtLock or {}
+	local raid = SK.Roster:RaidMembers()
+	for i = 1, #raid do
+		session.raidAtLock[string.lower(raid[i].name)] = true
+	end
+end
+
+function SK.Session:DetectRaid()
+	if not self:IsOfficer() then
+		return
+	end
+	if not IsInRaid or not IsInRaid() then
+		return
+	end
+	if not SK.Teams or not SK.Teams.MatchRaid then
+		return
+	end
+	if self:IsLocked() and not self:TeamIsLocked() then
+		return
+	end
+	local _, changed = SK.Teams:MatchRaid()
+	if changed then
+		SK.Teams:Materialize()
+		SK.List:RebuildIndex()
+		self:RefreshSeeding()
+		SK.Events:Fire("SK_LIST_CHANGED", "roster")
+	end
+	self:CheckJoins()
+end
+
+function SK.Session:OnRoster()
+	if not SK.Roster or not SK.Roster.Observe then
+		return
+	end
+	local kind = SK.Roster:Observe()
+	if kind == "boot" or kind == "away" then
+		return
+	end
+	if kind == "formed" or kind == "settle" then
+		self:AbsorbRaidStart()
+		return
+	end
+	self:DetectRaid()
 end
 
 function SK.Session:AnswerJoin(allow)
@@ -1221,6 +1365,14 @@ end)
 SK.Events:Register("PLAYER_ENTERING_WORLD", function()
 	if enteredAt == 0 then
 		enteredAt = time()
+	end
+	if SK.Session.CheckJoins then
+		SK.Session:CheckJoins()
+	end
+end)
+SK.Events:Register("ZONE_CHANGED_NEW_AREA", function()
+	if SK.Session.CheckJoins then
+		SK.Session:CheckJoins()
 	end
 end)
 

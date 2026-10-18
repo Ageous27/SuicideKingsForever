@@ -213,6 +213,14 @@ local function showMenu()
 				SK.Print(title .. " stays with the officer.")
 				return
 			end
+			for id, frame in pairs(SK.UI.windows) do
+				if id ~= entry.id and frame:IsShown() then
+					frame:Hide()
+				end
+			end
+			if SK.UI.menu and SK.UI.menu:IsShown() then
+				SK.UI.menu:Hide()
+			end
 			SK.UI:Open(entry.id)
 		end)
 		row:Show()

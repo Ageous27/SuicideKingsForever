@@ -155,7 +155,7 @@ function SK.List:SetDraft(name, patch)
 	if not SK.Session:IsOfficer() then
 		return "Officer only"
 	end
-	if SK.Session:IsLocked() then
+	if SK.Session:TeamIsLocked() then
 		return "The raid is locked."
 	end
 	local row = self:Find(name)
@@ -223,7 +223,7 @@ function SK.List:Clear()
 	if not SK.Session:IsOfficer() then
 		return "Officer only"
 	end
-	if SK.Session:IsLocked() then
+	if SK.Session:TeamIsLocked() then
 		return "The raid is locked."
 	end
 	local list = SK.Saved:List()
@@ -332,7 +332,7 @@ function SK.List:Move(name, dir)
 	if not SK.Session:IsOfficer() then
 		return "Officer only"
 	end
-	if SK.Session:IsLocked() then
+	if SK.Session:TeamIsLocked() then
 		return "The raid is locked."
 	end
 	local row, index = self:Find(name)
@@ -359,7 +359,7 @@ function SK.List:MoveBottom(name)
 	if not SK.Session:IsOfficer() then
 		return "Officer only"
 	end
-	if SK.Session:IsLocked() then
+	if SK.Session:TeamIsLocked() then
 		return "The raid is locked."
 	end
 	local row, index = self:Find(name)
@@ -433,7 +433,7 @@ function SK.List:Insert(name, class)
 	if not SK.Session:IsOfficer() then
 		return "Officer only"
 	end
-	if SK.Session:IsLocked() then
+	if SK.Session:TeamIsLocked() then
 		return "The raid is locked."
 	end
 	name = SK.Trim(name)
@@ -487,7 +487,7 @@ function SK.List:AddCore(name, class, status)
 	if not SK.Session:IsOfficer() then
 		return "Officer only"
 	end
-	if SK.Session:IsLocked() then
+	if SK.Session:TeamIsLocked() then
 		return "The raid is locked."
 	end
 	name = SK.Trim(name)
@@ -538,7 +538,7 @@ function SK.List:AddPug(name, class)
 	if not SK.Session:IsOfficer() then
 		return "Officer only"
 	end
-	if SK.Session:IsLocked() then
+	if SK.Session:TeamIsLocked() then
 		return "The raid is locked."
 	end
 	name = SK.Trim(name)
@@ -577,7 +577,7 @@ function SK.List:AddPugQuiet(name, class)
 	if person and not person.pug then
 		return false
 	end
-	local className = SK.ClassName(class) or "Warrior"
+	local className = SK.ClassName(class) or ""
 	table.insert(SK.Saved:List(), {
 		name = name,
 		class = className,
@@ -594,7 +594,7 @@ function SK.List:Remove(name)
 	if not SK.Session:IsOfficer() then
 		return "Officer only"
 	end
-	if SK.Session:IsLocked() then
+	if SK.Session:TeamIsLocked() then
 		return "The raid is locked."
 	end
 	local row, index = self:Find(name)

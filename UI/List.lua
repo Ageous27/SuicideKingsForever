@@ -5,11 +5,32 @@ listRoot:SetPoint("TOPLEFT", 0, -28)
 listRoot:SetPoint("BOTTOMRIGHT", 0, 0)
 local body = listRoot
 
-local teamBar = frame.body:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+local teamBar = CreateFrame("Button", nil, frame.body, "UIPanelButtonTemplate")
+teamBar:SetSize(180, 22)
 teamBar:SetPoint("TOPLEFT", 4, 2)
-teamBar:SetPoint("RIGHT", frame.body, "RIGHT", -176, 0)
-teamBar:SetJustifyH("LEFT")
 teamBar:SetText("Team")
+teamBar:SetScript("OnClick", function(self)
+	if SK.Session:IsLocked() then
+		return
+	end
+	local teams = SK.Teams:Catalog()
+	local rows = {}
+	for i = 1, #teams do
+		local entry = teams[i]
+		table.insert(rows, {
+			label = entry.name,
+			fn = function()
+				local err = SK.Teams:SelectTeam(entry.id)
+				if err then
+					SK.Print(err)
+				end
+			end,
+		})
+	end
+	if #rows > 0 then
+		SK.UI:Pick(self, rows)
+	end
+end)
 
 local listPick = CreateFrame("Button", nil, frame.body, "UIPanelButtonTemplate")
 listPick:SetSize(160, 22)
@@ -409,7 +430,7 @@ local function fixedList()
 end
 
 local function paintSetup(ready)
-	local blocked = SK.Session:IsLocked() or SK.Session:Live()
+	local blocked = SK.Session:TeamIsLocked() or SK.Session:Live()
 	local teamId = SK.Teams:TeamId()
 	if setupTeam ~= teamId then
 		setupTeam = teamId
@@ -432,8 +453,8 @@ local function paintSetup(ready)
 	addListBtn:SetEnabled(ready and not blocked)
 	continueBtn:SetShown(ready)
 	importBtn:SetEnabled(not blocked)
-	renameBtn:SetEnabled(not SK.Session:IsLocked())
-	newTeamBtn:SetEnabled(not blocked)
+	renameBtn:SetEnabled(not SK.Session:TeamIsLocked())
+	newTeamBtn:SetEnabled(not SK.Session:Live())
 	if ready then
 		setupIntro:SetText("Add a list if weapons or trinkets need their own order. Continue when you are done.")
 		listHelp:SetText("A new list starts with this roster and blank positions. A list with no rules gets items no other list claims. Slot rules are in Settings.")
@@ -532,7 +553,7 @@ switchBtn:SetScript("OnClick", function(self)
 end)
 
 importBtn:SetScript("OnClick", function()
-	if SK.Session:IsLocked() then
+	if SK.Session:TeamIsLocked() then
 		setupError = "The raid is locked."
 		refresh()
 		return
@@ -634,12 +655,18 @@ function refresh()
 	setup:Hide()
 	hideAsk()
 	teamBar:Show()
-	listPick:Show()
 	if SK.Teams then
 		teamBar:SetText(SK.Teams:TeamName())
-		listPick:SetText(SK.Teams:ListName())
+		teamBar:SetEnabled(not SK.Session:IsLocked())
+		local lists = SK.Teams:Lists()
+		if #lists > 1 then
+			listPick:SetText(SK.Teams:ListName())
+			listPick:Show()
+		else
+			listPick:Hide()
+		end
 	end
-	local reconcileMode = SK.Session:IsOfficer() and not SK.Session:IsLocked()
+	local reconcileMode = SK.Session:IsOfficer() and not SK.Session:TeamIsLocked()
 	local modeName = reconcileMode and "Reconcile" or "List"
 	if frame.page then
 		frame.page:SetText(modeName)
@@ -716,7 +743,7 @@ function refresh()
 	end
 
 
-	local locked = SK.Session:IsLocked()
+	local locked = SK.Session:TeamIsLocked()
 	controls:SetShown(officer)
 	scroll:SetPoint("BOTTOMRIGHT", -16, officer and 56 or 8)
 	notice:ClearAllPoints()
@@ -761,7 +788,12 @@ SK.Events:On("SK_OFFICER", function()
 		refresh()
 	end
 end)
-frame:SetScript("OnShow", refresh)
+frame:SetScript("OnShow", function()
+	if SK.Session and SK.Session.DetectRaid then
+		SK.Session:DetectRaid()
+	end
+	refresh()
+end)
 frame:SetScript("OnHide", function()
 	if SK.UI.HideReconcile then
 		SK.UI.HideReconcile()

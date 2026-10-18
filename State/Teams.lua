@@ -406,43 +406,140 @@ function SK.Teams:Rename(oldName, newName)
 	return newKey
 end
 
-function SK.Teams:FillFromRaid()
+local function firstWord(name)
+	return string.lower(string.match(name, "^(%S+)") or name)
+end
+
+local function noteRoster(name, detail)
+	if not SK.History then
+		return
+	end
+	local event = {
+		type = "edit",
+		action = "roster",
+		name = name,
+		detail = detail,
+		officer = UnitName("player"),
+	}
+	SK.Teams:Stamp(event)
+	SK.History:Append(event)
+end
+
+function SK.Teams:MatchRaid()
 	local filled = {}
-	if not SK.Roster or not SK.Roster.Resolve then
-		return filled
+	if not IsInRaid or not IsInRaid() then
+		return filled, false
+	end
+	if not SK.Session or not SK.Session:IsOfficer() then
+		return filled, false
+	end
+	if not SK.Roster or not SK.Roster.RaidMembers then
+		return filled, false
 	end
 	self:Ensure()
+	self:Flush()
 	local team = self:Team()
-	if not team then
-		return filled
+	if not team or type(team.people) ~= "table" then
+		return filled, false
 	end
-	local pending = {}
-	for _, person in pairs(team.people) do
-		if person.name and person.name ~= "" then
-			table.insert(pending, person.name)
+	local raid = SK.Roster:RaidMembers()
+	local taken = {}
+	local usedPerson = {}
+	local changed = false
+	for i = 1, #raid do
+		local member = raid[i]
+		local person = team.people[string.lower(member.name)]
+		if person then
+			taken[i] = true
+			usedPerson[string.lower(person.name)] = true
+			if member.class and member.class ~= "" and (not person.class or person.class == "") then
+				person.class = member.class
+				filled[string.lower(person.name)] = true
+				changed = true
+			end
 		end
 	end
-	for i = 1, #pending do
-		local person = team.people[string.lower(pending[i])]
-		if person then
-			local full, class, err = SK.Roster:Resolve(person.name)
-			if not err and full then
-				local key = string.lower(person.name)
-				if class and class ~= "" and (not person.class or person.class == "") then
-					person.class = class
-					filled[key] = true
-				end
-				if string.lower(full) ~= string.lower(person.name) then
-					local renamed = self:Rename(person.name, full)
-					if renamed then
-						filled[key] = nil
-						filled[renamed] = true
+	local pending = {}
+	for i = 1, #raid do
+		if not taken[i] then
+			local first = firstWord(raid[i].name)
+			pending[first] = pending[first] or {}
+			table.insert(pending[first], i)
+		end
+	end
+	for first, indexes in pairs(pending) do
+		local rows = {}
+		for _, person in pairs(team.people) do
+			if person.name and person.name ~= "" and not usedPerson[string.lower(person.name)] and not string.find(person.name, " ", 1, true) and firstWord(person.name) == first then
+				table.insert(rows, person)
+			end
+		end
+		table.sort(rows, function(a, b)
+			return a.name < b.name
+		end)
+		table.sort(indexes, function(a, b)
+			return raid[a].name < raid[b].name
+		end)
+		local count = #rows
+		if #indexes < count then
+			count = #indexes
+		end
+		local multiple = #indexes > 1
+		for n = 1, count do
+			local index = indexes[n]
+			local member = raid[index]
+			local person = rows[n]
+			local oldKey = string.lower(person.name)
+			taken[index] = true
+			if team.people[string.lower(member.name)] and string.lower(member.name) ~= oldKey then
+				-- This full name is already on the team.
+			else
+				if string.lower(member.name) ~= oldKey then
+					local newKey = self:Rename(person.name, member.name)
+					if newKey then
+						filled[oldKey] = nil
+						filled[newKey] = true
+						usedPerson[oldKey] = true
+						usedPerson[newKey] = true
+						changed = true
+						noteRoster(member.name, "name from raid")
+						person = team.people[newKey]
 					end
+				else
+					usedPerson[oldKey] = true
+				end
+				if person and member.class and member.class ~= "" and (multiple or not person.class or person.class == "") and person.class ~= member.class then
+					person.class = member.class
+					filled[string.lower(person.name)] = true
+					changed = true
 				end
 			end
 		end
 	end
-	return filled
+	for i = 1, #raid do
+		if not taken[i] then
+			local member = raid[i]
+			local key = string.lower(member.name)
+			if not team.people[key] then
+				team.people[key] = {
+					name = member.name,
+					class = member.class or "",
+					status = "Pug/fill",
+					rolls = "MS, OS",
+					hold = false,
+					pug = true,
+				}
+				filled[key] = true
+				changed = true
+				noteRoster(member.name, "pug / fill from raid")
+			end
+		end
+	end
+	return filled, changed
+end
+
+function SK.Teams:FillFromRaid()
+	return self:MatchRaid()
 end
 
 function SK.Teams:Stamp(event)
@@ -518,42 +615,89 @@ function SK.Teams:Row(listId, name)
 	end
 	self:Ensure()
 	local db = bank()
-	if not listId or listId == db.list then
+	local team = db.teams[db.team]
+	local list = nil
+	if team and listId and team.lists[listId] then
+		list = team.lists[listId]
+	elseif team and not listId then
+		list = team.lists[db.list]
+	elseif listId then
+		local lockedId = SK.Session and SK.Session.LockedTeam and SK.Session:LockedTeam()
+		local lockedTeam = lockedId and db.teams[lockedId]
+		if lockedTeam and lockedTeam.lists[listId] then
+			team = lockedTeam
+			list = lockedTeam.lists[listId]
+		else
+			for i = 1, #db.teamOrder do
+				local other = db.teams[db.teamOrder[i]]
+				if other and other.lists[listId] then
+					team = other
+					list = other.lists[listId]
+					break
+				end
+			end
+		end
+	end
+	if not team then
 		return SK.List:Find(name)
 	end
-	local team = db.teams[db.team]
-	local list = team and team.lists[listId]
-	if not team or not list then
+	if not list then
 		return nil
 	end
-	local key = string.lower(name)
-	local person = team.people[key]
-	if not person then
-		return nil
-	end
-	if person.pug then
+	local function rowFor(person, key)
+		if not person then
+			return nil
+		end
+		if person.pug then
+			return {
+				name = person.name,
+				class = person.class,
+				position = nil,
+				status = person.status,
+				rolls = person.rolls,
+				hold = person.hold and true or false,
+				pug = true,
+			}
+		end
+		if not list or not list.members[key] then
+			return nil
+		end
 		return {
 			name = person.name,
 			class = person.class,
-			position = nil,
+			position = list.pos[key],
 			status = person.status,
 			rolls = person.rolls,
 			hold = person.hold and true or false,
-			pug = true,
+			pug = false,
 		}
 	end
-	if not list.members[key] then
+	local key = string.lower(name)
+	local exact = rowFor(team.people[key], key)
+	if exact then
+		return exact
+	end
+	local want = string.lower(SK.ShortName(name))
+	local first = string.lower(string.match(want, "^(%S+)") or want)
+	if first == "" then
 		return nil
 	end
-	return {
-		name = person.name,
-		class = person.class,
-		position = list.pos[key],
-		status = person.status,
-		rolls = person.rolls,
-		hold = person.hold and true or false,
-		pug = false,
-	}
+	local hits = {}
+	for personKey, person in pairs(team.people) do
+		local personName = string.lower(person.name or "")
+		local personFirst = string.lower(string.match(person.name or "", "^(%S+)") or "")
+		local same = personName == want or personName == first or personFirst == want or personFirst == first
+		if same then
+			local row = rowFor(person, personKey)
+			if row then
+				table.insert(hits, row)
+			end
+		end
+	end
+	if #hits == 1 then
+		return hits[1]
+	end
+	return nil
 end
 
 function SK.Teams:WithList(listId, fn)
@@ -621,24 +765,27 @@ function SK.Teams:SelectList(id)
 	return nil
 end
 
-local function structureLock()
+local function structureLock(teamId)
 	if not SK.Session:IsOfficer() then
 		return "Officer only"
 	end
-	if SK.Session:IsLocked() then
+	if SK.Session.TeamIsLocked and SK.Session:TeamIsLocked(teamId) then
 		return "The raid is locked."
 	end
 	if SK.Session:Live() then
-		return "An item is live."
+		local live = SK.Session:Live()
+		local here = teamId
+		if not here then
+			here = SK.Teams:TeamId()
+		end
+		if not live or not live.teamId or live.teamId == here then
+			return "An item is live."
+		end
 	end
 	return nil
 end
 
 function SK.Teams:SelectTeam(id)
-	local err = structureLock()
-	if err then
-		return err
-	end
 	self:Ensure()
 	local db = bank()
 	if not db.teams[id] then
@@ -652,14 +799,16 @@ function SK.Teams:SelectTeam(id)
 	local team = db.teams[id]
 	db.list = team.listOrder[1]
 	self:Materialize()
-	publish("team")
+	publish("view")
+	if SK.Session and SK.Session.TeamIsLocked and SK.Session:TeamIsLocked(id) and SK.Session.DetectRaid then
+		SK.Session:DetectRaid()
+	end
 	return nil
 end
 
 function SK.Teams:AddTeam(name)
-	local err = structureLock()
-	if err then
-		return err
+	if not SK.Session:IsOfficer() then
+		return "Officer only"
 	end
 	name = cleanName(name)
 	if name == "" then
@@ -691,13 +840,16 @@ function SK.Teams:RenameTeam(name, id)
 	if not team then
 		return "That team is gone."
 	end
+	if SK.Session.TeamIsLocked and SK.Session:TeamIsLocked(team.id) then
+		return "The raid is locked."
+	end
 	team.name = name
 	publish("team")
 	return nil
 end
 
 function SK.Teams:RemoveTeam(id)
-	local err = structureLock()
+	local err = structureLock(id)
 	if err then
 		return err
 	end
@@ -986,6 +1138,9 @@ function SK.Teams:DraftAddItem(itemId)
 	if not SK.Session:IsOfficer() then
 		return "Officer only"
 	end
+	if SK.Session.TeamIsLocked and SK.Session:TeamIsLocked() then
+		return "The raid is locked."
+	end
 	local id = tonumber(itemId) or tonumber(string.match(tostring(itemId or ""), "item:(%d+)"))
 	if not id then
 		return "Enter an item id."
@@ -1009,6 +1164,9 @@ function SK.Teams:DraftAddSlot(slot)
 	if not SK.Session:IsOfficer() then
 		return "Officer only"
 	end
+	if SK.Session.TeamIsLocked and SK.Session:TeamIsLocked() then
+		return "The raid is locked."
+	end
 	slot = SK.Trim(slot or "")
 	if slot == "" then
 		return "Pick a slot."
@@ -1031,6 +1189,9 @@ function SK.Teams:DraftClear(kind, key)
 	if not SK.Session:IsOfficer() then
 		return "Officer only"
 	end
+	if SK.Session.TeamIsLocked and SK.Session:TeamIsLocked() then
+		return "The raid is locked."
+	end
 	self:Ensure()
 	local list = self:ActiveList()
 	if not list then
@@ -1046,6 +1207,9 @@ end
 function SK.Teams:Save()
 	if not SK.Session:IsOfficer() then
 		return "Officer only"
+	end
+	if SK.Session.TeamIsLocked and SK.Session:TeamIsLocked() then
+		return "The raid is locked."
 	end
 	self:Ensure()
 	local team = self:Team()
@@ -1160,77 +1324,113 @@ end
 
 function SK.Teams:Pieces(lockedFlag)
 	self:Flush()
-	local team = self:Team()
+	local db = bank()
 	local pieces = {}
-	if not team then
-		return pieces
+	local lockedId = SK.Session and SK.Session.LockedTeam and SK.Session:LockedTeam()
+	local function flagFor(team)
+		if lockedFlag == "0" then
+			return "0"
+		end
+		if lockedId then
+			return team.id == lockedId and "1" or "0"
+		end
+		if lockedFlag == "1" or (SK.Session and SK.Session:IsLocked()) then
+			return team.id == db.team and "1" or "0"
+		end
+		return "0"
 	end
-	local locked = lockedFlag
-	if locked ~= "0" and locked ~= "1" then
-		locked = SK.Session and SK.Session:IsLocked() and "1" or "0"
-	end
-	table.insert(pieces, "#T," .. pieceSafe(team.id) .. "," .. pieceSafe(team.name) .. "," .. locked)
-	for i = 1, #team.listOrder do
-		local list = team.lists[team.listOrder[i]]
-		table.insert(pieces, "#L," .. pieceSafe(list.id) .. "," .. pieceSafe(list.name) .. "," .. (list.fixed and "1" or "0"))
-		local rules = list.rules or blankRules()
-		for itemId in pairs(rules.items or {}) do
-			table.insert(pieces, "#I," .. pieceSafe(itemId))
+	local function appendTeam(team)
+		if not team then
+			return
 		end
-		local slots = {}
-		for slot in pairs(rules.slots or {}) do
-			table.insert(slots, slot)
-		end
-		table.sort(slots)
-		for n = 1, #slots do
-			table.insert(pieces, "#S," .. pieceSafe(slots[n]))
-		end
-		for key, person in pairs(team.people) do
-			local include = person.pug or list.members[key]
-			if include then
-				local position = (not person.pug) and list.pos[key] or nil
-				local row = {
-					name = person.name,
-					class = person.class,
-					position = position,
-					status = person.status,
-					pug = person.pug,
-					rolls = person.rolls,
-					hold = person.hold,
-				}
-				table.insert(pieces, "#P," .. SK.Sync.EncodeRow(row))
+		table.insert(pieces, "#T," .. pieceSafe(team.id) .. "," .. pieceSafe(team.name) .. "," .. flagFor(team))
+		for i = 1, #team.listOrder do
+			local list = team.lists[team.listOrder[i]]
+			table.insert(pieces, "#L," .. pieceSafe(list.id) .. "," .. pieceSafe(list.name) .. "," .. (list.fixed and "1" or "0"))
+			local rules = list.rules or blankRules()
+			for itemId in pairs(rules.items or {}) do
+				table.insert(pieces, "#I," .. pieceSafe(itemId))
+			end
+			local slots = {}
+			for slot in pairs(rules.slots or {}) do
+				table.insert(slots, slot)
+			end
+			table.sort(slots)
+			for n = 1, #slots do
+				table.insert(pieces, "#S," .. pieceSafe(slots[n]))
+			end
+			for key, person in pairs(team.people) do
+				local include = person.pug or list.members[key]
+				if include then
+					local position = (not person.pug) and list.pos[key] or nil
+					local row = {
+						name = person.name,
+						class = person.class,
+						position = position,
+						status = person.status,
+						pug = person.pug,
+						rolls = person.rolls,
+						hold = person.hold,
+					}
+					table.insert(pieces, "#P," .. SK.Sync.EncodeRow(row))
+				end
 			end
 		end
+	end
+	for i = 1, #db.teamOrder do
+		appendTeam(db.teams[db.teamOrder[i]])
 	end
 	return pieces
 end
 
 function SK.Teams:ApplyPieces(parts, lockedFallback)
-	local teamId, teamName, locked
-	local people = {}
-	local lists = {}
-	local order = {}
+	local built = {}
+	local builtOrder = {}
+	local currentTeam = nil
 	local current = nil
+	local sawLock = false
+	local sawUnlock = false
+	local lockedTeamId = nil
+	local function finish()
+		if not currentTeam or currentTeam.id == "" or #currentTeam.listOrder == 0 then
+			currentTeam = nil
+			current = nil
+			return
+		end
+		table.insert(builtOrder, currentTeam.id)
+		built[currentTeam.id] = currentTeam
+		currentTeam = nil
+		current = nil
+	end
 	for i = 1, #parts do
 		local piece = parts[i]
 		if string.sub(piece, 1, 3) == "#T," then
+			finish()
 			local id, name, flag = string.match(piece, "^#T,([^,]*),([^,]*),([01])$")
 			if not id then
 				id, name = string.match(piece, "^#T,([^,]*),([^,]*)$")
 			end
-			teamId = id
-			teamName = name
-			if flag == "1" then
-				locked = true
-			elseif flag == "0" then
-				locked = false
+			if id and id ~= "" then
+				currentTeam = {
+					id = id,
+					name = name ~= "" and name or "Team",
+					people = {},
+					listOrder = {},
+					lists = {},
+				}
+				if flag == "1" then
+					sawLock = true
+					lockedTeamId = id
+				elseif flag == "0" then
+					sawUnlock = true
+				end
 			end
-		elseif string.sub(piece, 1, 3) == "#L," then
+		elseif currentTeam and string.sub(piece, 1, 3) == "#L," then
 			local id, name, flag = string.match(piece, "^#L,([^,]*),([^,]*),([01])$")
 			if id and id ~= "" then
 				current = makeList(id, name ~= "" and name or "List", flag == "1")
-				lists[id] = current
-				table.insert(order, id)
+				currentTeam.lists[id] = current
+				table.insert(currentTeam.listOrder, id)
 			end
 		elseif current and string.sub(piece, 1, 3) == "#I," then
 			local itemId = string.match(piece, "^#I,(.+)$")
@@ -1242,11 +1442,11 @@ function SK.Teams:ApplyPieces(parts, lockedFallback)
 			if slot and slot ~= "" then
 				current.rules.slots[slot] = true
 			end
-		elseif current and string.sub(piece, 1, 3) == "#P," then
+		elseif current and currentTeam and string.sub(piece, 1, 3) == "#P," then
 			local row = SK.Sync.DecodeRow(string.sub(piece, 4))
 			if row then
 				local key = string.lower(row.name)
-				people[key] = {
+				currentTeam.people[key] = {
 					name = row.name,
 					class = row.class,
 					status = row.status,
@@ -1263,44 +1463,61 @@ function SK.Teams:ApplyPieces(parts, lockedFallback)
 			end
 		end
 	end
-	if not teamId or teamId == "" or #order == 0 then
+	finish()
+	if #builtOrder == 0 then
 		return
 	end
 	local db = bank()
-	local known = false
-	for i = 1, #db.teamOrder do
-		if db.teamOrder[i] == teamId then
-			known = true
-			break
+	local viewing = db.team
+	local viewingList = db.list
+	for i = 1, #builtOrder do
+		local id = builtOrder[i]
+		local known = false
+		for n = 1, #db.teamOrder do
+			if db.teamOrder[n] == id then
+				known = true
+				break
+			end
+		end
+		if not known then
+			table.insert(db.teamOrder, id)
+		end
+		db.teams[id] = built[id]
+	end
+	local touchedView = false
+	if viewing and db.teams[viewing] then
+		db.team = viewing
+		if db.teams[viewing].lists[viewingList] then
+			db.list = viewingList
+		else
+			db.list = db.teams[viewing].listOrder[1]
+		end
+		for i = 1, #builtOrder do
+			if builtOrder[i] == viewing then
+				touchedView = true
+			end
+		end
+	else
+		db.team = builtOrder[1]
+		db.list = built[db.team].listOrder[1]
+		touchedView = true
+	end
+	if touchedView then
+		self:Materialize()
+		if SK.List then
+			SK.List:RebuildIndex()
+		end
+		if SK.Session then
+			SK.Session:RefreshSeeding()
 		end
 	end
-	if not known then
-		table.insert(db.teamOrder, teamId)
-	end
-	db.teams[teamId] = {
-		id = teamId,
-		name = teamName ~= "" and teamName or "Team",
-		people = people,
-		listOrder = order,
-		lists = lists,
-	}
-	db.team = teamId
-	if locked and not (SK.Session and SK.Session:IsOfficer()) then
-		local kept = db.teams[teamId]
-		db.teams = {}
-		db.teams[teamId] = kept
-		db.teamOrder = { teamId }
-	end
-	if not lists[db.list] then
-		db.list = order[1]
-	end
-	self:Materialize()
-	if SK.List then
-		SK.List:RebuildIndex()
-	end
 	if SK.Session then
-		SK.Session:RefreshSeeding()
-		if locked == nil then
+		local locked = nil
+		if sawLock then
+			locked = true
+		elseif sawUnlock then
+			locked = false
+		elseif lockedFallback ~= nil then
 			locked = lockedFallback
 		end
 		if locked ~= nil and SK.Session.ApplyLock then
@@ -1308,7 +1525,7 @@ function SK.Teams:ApplyPieces(parts, lockedFallback)
 		end
 		local session = SK.Saved:Session()
 		if locked then
-			session.lockedTeam = teamId
+			session.lockedTeam = lockedTeamId
 		elseif locked == false then
 			session.lockedTeam = nil
 		end
