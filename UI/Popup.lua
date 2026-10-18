@@ -136,6 +136,22 @@ local function personLine(name)
 	return row.name .. ", " .. row.class .. ", position " .. row.position
 end
 
+local function liveToken(live)
+	if not live then
+		return nil
+	end
+	return table.concat({
+		live.state or "",
+		tostring(live.endsAt or 0),
+		live.listId or "",
+		live.raw or live.link or live.name or "",
+	}, "\031")
+end
+
+close:HookScript("OnClick", function()
+	frame.dismissed = frame.token
+end)
+
 local function refresh(reason)
 	if SK.Gargul and SK.Gargul:UseGargul() then
 		frame:Hide()
@@ -147,8 +163,13 @@ local function refresh(reason)
 	local allowed = open and SK.Session:ChoicesFor(name) or {}
 	local had = frame.hadChoices and true or false
 	local gained = reason == "list" and not had
-	local show = open and #allowed > 0 and (reason == "start" or reason == "rolloff" or frame:IsShown() or gained)
+	local token = liveToken(live)
+	local incoming = reason == "start" or reason == "rolloff" or reason == "remote"
+	local show = open and #allowed > 0 and token ~= frame.dismissed and (incoming or frame:IsShown() or gained)
 	frame.hadChoices = open and #allowed > 0 and true or false
+	if show then
+		frame.token = token
+	end
 	if not show then
 		if frame:IsShown() and not open then
 			frame:Hide()

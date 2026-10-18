@@ -756,6 +756,11 @@ SK.Events:Register("GROUP_ROSTER_UPDATE", function()
 		refresh()
 	end
 end)
+SK.Events:On("SK_OFFICER", function()
+	if frame:IsShown() then
+		refresh()
+	end
+end)
 frame:SetScript("OnShow", refresh)
 frame:SetScript("OnHide", function()
 	if SK.UI.HideReconcile then

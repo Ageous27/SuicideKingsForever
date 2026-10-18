@@ -1,27 +1,68 @@
 SK = SK or {}
 SK.Session = SK.Session or {}
 
+local function samePlayer(name)
+	if type(name) ~= "string" or name == "" then
+		return false
+	end
+	return SK.ShortName(name) == SK.ShortName(UnitName("player"))
+end
+
+local function methodIsMaster(method)
+	if method == "master" or method == "masterlooter" then
+		return true
+	end
+	if Enum and Enum.LootMethod and method == Enum.LootMethod.Masterlooter then
+		return true
+	end
+	return type(method) == "number" and method == 2
+end
+
+local function playerIsListedMaster(partyId, raidId)
+	if type(raidId) == "number" and raidId > 0 and GetRaidRosterInfo then
+		return samePlayer(GetRaidRosterInfo(raidId))
+	end
+	if type(partyId) == "number" then
+		if partyId == 0 then
+			return true
+		end
+		if partyId > 0 and UnitIsUnit then
+			return UnitIsUnit("player", "party" .. partyId) and true or false
+		end
+	end
+	if type(partyId) == "string" and partyId ~= "" then
+		if UnitExists and UnitExists(partyId) then
+			return UnitIsUnit("player", partyId) and true or false
+		end
+		return samePlayer(partyId)
+	end
+	if type(raidId) == "string" and raidId ~= "" and UnitExists and UnitExists(raidId) then
+		return UnitIsUnit("player", raidId) and true or false
+	end
+	return nil
+end
+
 local function masterLooterIsPlayer()
-	if C_PartyInfo and C_PartyInfo.GetLootMethod and Enum and Enum.LootMethod then
-		local ok, method, master = pcall(C_PartyInfo.GetLootMethod)
-		if ok and method == Enum.LootMethod.Masterlooter then
-			if type(master) == "string" and master ~= "" and UnitExists(master) then
-				return UnitIsUnit("player", master)
+	if C_PartyInfo and C_PartyInfo.GetLootMethod then
+		local ok, method, partyId, raidId = pcall(C_PartyInfo.GetLootMethod)
+		if ok and methodIsMaster(method) then
+			local listed = playerIsListedMaster(partyId, raidId)
+			if listed ~= nil then
+				return listed
 			end
-			return false
 		end
 	end
 	if GetLootMethod then
 		local method, partyIndex, raidIndex = GetLootMethod()
 		if method == "master" then
-			if raidIndex and GetRaidRosterInfo then
-				return GetRaidRosterInfo(raidIndex) == UnitName("player")
+			if type(raidIndex) == "number" and raidIndex > 0 and GetRaidRosterInfo then
+				return samePlayer(GetRaidRosterInfo(raidIndex))
 			end
 			if partyIndex == 0 then
 				return true
 			end
-			if partyIndex then
-				return UnitIsUnit("player", "party" .. partyIndex)
+			if type(partyIndex) == "number" and partyIndex > 0 and UnitIsUnit then
+				return UnitIsUnit("player", "party" .. partyIndex) and true or false
 			end
 			return false
 		end
@@ -53,9 +94,18 @@ function SK.Session:IsLocked()
 	return SK.Saved:Session().locked and true or false
 end
 
+function SK.Session:LockedTeam()
+	local teamId = SK.Saved:Session().lockedTeam
+	if type(teamId) == "string" and teamId ~= "" then
+		return teamId
+	end
+	return nil
+end
+
 function SK.Session:Unlock()
 	local session = SK.Saved:Session()
 	session.locked = false
+	session.lockedTeam = nil
 	session.pendingJoins = {}
 	session.blocked = {}
 	session.joinAnswers = {}
@@ -68,6 +118,9 @@ function SK.Session:UnlockRaid()
 	end
 	if not self:IsLocked() then
 		return "The raid is not locked."
+	end
+	if SK.Sync and SK.Sync.BroadcastTeam then
+		SK.Sync:BroadcastTeam("0")
 	end
 	self:Unlock()
 	SK.Events:Fire("SK_LIST_CHANGED", "unlock")
@@ -842,13 +895,15 @@ function SK.Session:ApplyRemote(state, endsAt, tier, names, link)
 		link = realLink
 		info = SK.Item.Describe(link)
 	end
+	local ends = tonumber(endsAt) or 0
 	db().live = {
 		link = info.link or link,
 		name = info.name or "Loading item...",
 		icon = info.icon,
 		itemID = info.itemID,
 		raw = link,
-		endsAt = tonumber(endsAt) or 0,
+		endsAt = ends,
+		duration = math.max(1, ends - time()),
 		state = state or "open",
 		responses = {},
 		seeding = (listId and listId ~= "" and SK.Teams and SK.Teams:IsSeeding(listId)) or self:IsSeeding(),
@@ -911,6 +966,7 @@ function SK.Session:LockRaid()
 	list = SK.Saved:List()
 	local session = SK.Saved:Session()
 	session.locked = true
+	session.lockedTeam = SK.Teams and SK.Teams:TeamId() or nil
 	if not session.raidId or session.raidId == "" then
 		session.raidId = tostring(time())
 	end
@@ -1167,3 +1223,29 @@ SK.Events:Register("PLAYER_ENTERING_WORLD", function()
 		enteredAt = time()
 	end
 end)
+
+local wasOfficer = nil
+
+local function noteOfficer()
+	local nowOfficer = SK.Session:IsOfficer()
+	local changedRole = wasOfficer ~= nil and wasOfficer ~= nowOfficer
+	wasOfficer = nowOfficer
+	if not changedRole then
+		return
+	end
+	local session = SK.Saved:Session()
+	if nowOfficer then
+		session.raidOfficer = UnitName("player")
+		session.raidSawGroup = true
+		if SK.Session:IsLocked() and SK.Sync and SK.Sync.Broadcast then
+			SK.Sync:Broadcast()
+		end
+	elseif session.raidOfficer and samePlayer(session.raidOfficer) then
+		session.raidOfficer = nil
+	end
+	SK.Events:Fire("SK_OFFICER")
+end
+
+SK.Events:Register("GROUP_ROSTER_UPDATE", noteOfficer)
+SK.Events:Register("PARTY_LOOT_METHOD_CHANGED", noteOfficer)
+SK.Events:On("SK_READY", noteOfficer)

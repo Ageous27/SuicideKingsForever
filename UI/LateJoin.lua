@@ -133,3 +133,4 @@ end)
 
 SK.Events:On("SK_JOIN", refresh)
 SK.Events:On("SK_READY", refresh)
+SK.Events:On("SK_OFFICER", refresh)

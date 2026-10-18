@@ -1158,14 +1158,17 @@ local function pieceSafe(text)
 	return text
 end
 
-function SK.Teams:Pieces()
+function SK.Teams:Pieces(lockedFlag)
 	self:Flush()
 	local team = self:Team()
 	local pieces = {}
 	if not team then
 		return pieces
 	end
-	local locked = SK.Session and SK.Session:IsLocked() and "1" or "0"
+	local locked = lockedFlag
+	if locked ~= "0" and locked ~= "1" then
+		locked = SK.Session and SK.Session:IsLocked() and "1" or "0"
+	end
 	table.insert(pieces, "#T," .. pieceSafe(team.id) .. "," .. pieceSafe(team.name) .. "," .. locked)
 	for i = 1, #team.listOrder do
 		local list = team.lists[team.listOrder[i]]
@@ -1282,6 +1285,12 @@ function SK.Teams:ApplyPieces(parts, lockedFallback)
 		lists = lists,
 	}
 	db.team = teamId
+	if locked and not (SK.Session and SK.Session:IsOfficer()) then
+		local kept = db.teams[teamId]
+		db.teams = {}
+		db.teams[teamId] = kept
+		db.teamOrder = { teamId }
+	end
 	if not lists[db.list] then
 		db.list = order[1]
 	end
@@ -1296,6 +1305,12 @@ function SK.Teams:ApplyPieces(parts, lockedFallback)
 		end
 		if locked ~= nil and SK.Session.ApplyLock then
 			SK.Session:ApplyLock(locked)
+		end
+		local session = SK.Saved:Session()
+		if locked then
+			session.lockedTeam = teamId
+		elseif locked == false then
+			session.lockedTeam = nil
 		end
 	end
 	if SK.Events then

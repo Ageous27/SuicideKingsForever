@@ -1192,6 +1192,11 @@ SK.Events:Register("GROUP_ROSTER_UPDATE", function()
 		refresh()
 	end
 end)
+SK.Events:On("SK_OFFICER", function()
+	if frame:IsShown() then
+		refresh()
+	end
+end)
 SK.Events:On("SK_SETTINGS", refresh)
 SK.Events:On("SK_LIST_CHANGED", function()
 	if frame:IsShown() then

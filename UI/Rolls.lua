@@ -942,6 +942,11 @@ SK.Events:On("SK_SESSION", function()
 	message = ""
 	refresh()
 end)
+SK.Events:On("SK_OFFICER", function()
+	if frame:IsShown() then
+		refresh()
+	end
+end)
 pcall(function()
 	SK.Events:Register("GET_ITEM_INFO_RECEIVED", function()
 		if frame:IsShown() then

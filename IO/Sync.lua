@@ -87,7 +87,14 @@ function SK.Sync:Broadcast()
 	if not channel() then
 		return
 	end
+	if not SK.Session:IsLocked() then
+		return
+	end
 	if SK.Teams then
+		local lockedId = SK.Session.LockedTeam and SK.Session:LockedTeam()
+		if lockedId and SK.Teams:TeamId() ~= lockedId then
+			return
+		end
 		self:BroadcastTeam()
 		return
 	end
@@ -122,11 +129,18 @@ end
 
 local bankInbox = {}
 
-function SK.Sync:BroadcastTeam()
+function SK.Sync:BroadcastTeam(lockedFlag)
 	if not SK.Session:IsOfficer() or not channel() or not SK.Teams then
 		return
 	end
-	local pieces = SK.Teams:Pieces()
+	if lockedFlag == nil and not SK.Session:IsLocked() then
+		return
+	end
+	local lockedId = SK.Session.LockedTeam and SK.Session:LockedTeam()
+	if lockedFlag == nil and lockedId and SK.Teams:TeamId() ~= lockedId then
+		return
+	end
+	local pieces = SK.Teams:Pieces(lockedFlag)
 	local chunks = {}
 	local buf = ""
 	local function push(piece)
@@ -147,7 +161,7 @@ function SK.Sync:BroadcastTeam()
 	end
 	self.bankToken = (self.bankToken or 0) + 1
 	local token = tostring(self.bankToken)
-	local locked = SK.Session:IsLocked() and "1" or "0"
+	local locked = lockedFlag or (SK.Session:IsLocked() and "1" or "0")
 	for i = 1, #chunks do
 		send(string.format("B,%s,%d,%d,%s,%s", token, i, #chunks, locked, chunks[i]))
 	end
