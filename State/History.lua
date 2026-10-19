@@ -69,11 +69,19 @@ function SK.History:ExportDiscord()
 	return table.concat(lines, "\n")
 end
 
-local function splitTabs(line)
+local function splitFields(line)
+	local sep = "\t"
+	if string.find(line, "\t", 1, true) then
+		sep = "\t"
+	elseif string.find(line, ";", 1, true) then
+		sep = ";"
+	elseif string.find(line, "|", 1, true) then
+		sep = "|"
+	end
 	local out = {}
 	local rest = line
 	while true do
-		local at = string.find(rest, "\t", 1, true)
+		local at = string.find(rest, sep, 1, true)
 		if not at then
 			table.insert(out, rest)
 			break
@@ -93,7 +101,7 @@ function SK.History:Parse(text)
 		lineNo = lineNo + 1
 		local trimmed = SK.Trim(line)
 		if trimmed ~= "" and string.sub(trimmed, 1, 1) ~= "#" then
-			local fields = splitTabs(trimmed)
+			local fields = splitFields(trimmed)
 			local id = fields[1]
 			local when = fields[2]
 			local header = string.lower(id or "") == "id" and string.lower(when or "") == "time"

@@ -17,6 +17,10 @@ local function splitLine(line)
 	local sep = ","
 	if string.find(line, "\t", 1, true) then
 		sep = "\t"
+	elseif string.find(line, ";", 1, true) then
+		sep = ";"
+	elseif string.find(line, "|", 1, true) then
+		sep = "|"
 	end
 	local fields = {}
 	local start = 1
