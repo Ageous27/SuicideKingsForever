@@ -1,6 +1,11 @@
 SK = SK or {}
 SK.UI = SK.UI or {}
 
+function SK.UI.LiftTooltip()
+	GameTooltip:SetFrameStrata("TOOLTIP")
+	GameTooltip:Raise()
+end
+
 SK.UI.windows = {}
 SK.UI.titles = {}
 SK.UI.entries = {
@@ -147,6 +152,7 @@ local BACKDROP = {
 function SK.UI:CreateWindow(id, title)
 	local frame = CreateFrame("Frame", "SKF" .. id, UIParent, "BackdropTemplate")
 	frame:SetSize(480, 520)
+	frame:SetFrameStrata("FULLSCREEN_DIALOG")
 	frame:SetClampedToScreen(true)
 	frame:SetMovable(true)
 	frame:EnableMouse(true)
@@ -201,6 +207,7 @@ function SK.UI:Open(id)
 	end
 	self:ApplyLayout(frame)
 	frame:Show()
+	frame:Raise()
 end
 
 function SK.UI:Toggle(id)
@@ -213,6 +220,7 @@ function SK.UI:Toggle(id)
 	else
 		self:ApplyLayout(frame)
 		frame:Show()
+		frame:Raise()
 	end
 end
 
@@ -235,7 +243,7 @@ function SK.UI:ToggleMenu(owner)
 	end
 	if not menu then
 		menu = CreateFrame("Frame", "SKFMenu", UIParent, "BackdropTemplate")
-		menu:SetFrameStrata("DIALOG")
+		menu:SetFrameStrata("TOOLTIP")
 		menu:SetBackdrop(BACKDROP)
 		menu.buttons = {}
 		self.menu = menu
@@ -276,6 +284,7 @@ function SK.UI:ToggleMenu(owner)
 	menu:ClearAllPoints()
 	menu:SetPoint("TOPRIGHT", owner, "TOPRIGHT", -28, -36)
 	menu:Show()
+	menu:Raise()
 end
 
 SLASH_SKF1 = "/sk"
@@ -322,7 +331,7 @@ local pick
 function SK.UI:Pick(anchor, rows, maxLines)
 	if not pick then
 		pick = CreateFrame("Frame", "SKFPick", UIParent, "BackdropTemplate")
-		pick:SetFrameStrata("DIALOG")
+		pick:SetFrameStrata("TOOLTIP")
 		pick:SetClampedToScreen(true)
 		pick:SetBackdrop({
 			bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -422,4 +431,5 @@ function SK.UI:Pick(anchor, rows, maxLines)
 	pick:EnableMouseWheel(true)
 	pick:SetScript("OnMouseWheel", onWheel)
 	pick:Show()
+	pick:Raise()
 end

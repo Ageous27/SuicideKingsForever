@@ -47,6 +47,7 @@ local function columnHead(text, x, width, justify, lines)
 			GameTooltip:AddLine(lines[i], 1, 1, 1, true)
 		end
 		GameTooltip:Show()
+		SK.UI.LiftTooltip()
 	end)
 	hit:SetScript("OnLeave", function()
 		GameTooltip:Hide()
@@ -115,7 +116,7 @@ local function ensureMenu()
 		return menu
 	end
 	menu = CreateFrame("Frame", "SKFReconcileStatus", UIParent, "BackdropTemplate")
-	menu:SetFrameStrata("DIALOG")
+	menu:SetFrameStrata("TOOLTIP")
 	menu:SetClampedToScreen(true)
 	menu:SetBackdrop({
 		bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -222,6 +223,7 @@ local function openMenu(anchor, rowFrame, kind)
 	popup:ClearAllPoints()
 	popup:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
 	popup:Show()
+	popup:Raise()
 end
 
 local showRemoveMenu
@@ -400,6 +402,7 @@ function showRemoveMenu(name)
 	removeMenu:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", (x / scale) + 2, y / scale)
 	removeMenu.arming = true
 	removeMenu:Show()
+	removeMenu:Raise()
 end
 
 removeMenu:SetScript("OnUpdate", function(self)
@@ -450,18 +453,12 @@ nameBox:SetPoint("BOTTOMLEFT", 8, 8)
 nameBox:SetAutoFocus(false)
 nameBox:SetMaxLetters(24)
 
-local classBox = CreateFrame("EditBox", nil, form, "InputBoxTemplate")
-classBox:SetSize(110, 20)
-classBox:SetPoint("LEFT", nameBox, "RIGHT", 12, 0)
-classBox:SetAutoFocus(false)
-classBox:SetMaxLetters(16)
-
 local formLabel = form:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 formLabel:SetPoint("BOTTOMLEFT", nameBox, "TOPLEFT", -4, 4)
 
 local pugCheck = CreateFrame("CheckButton", nil, form)
 pugCheck:SetSize(24, 24)
-pugCheck:SetPoint("LEFT", classBox, "RIGHT", 8, 0)
+pugCheck:SetPoint("LEFT", nameBox, "RIGHT", 12, 0)
 pugCheck:SetNormalTexture("Interface\\Buttons\\UI-CheckBox-Up")
 pugCheck:SetPushedTexture("Interface\\Buttons\\UI-CheckBox-Down")
 pugCheck:SetHighlightTexture("Interface\\Buttons\\UI-CheckBox-Highlight", "ADD")
@@ -492,7 +489,6 @@ local function hideForm()
 	addOpen = false
 	form:Hide()
 	nameBox:ClearFocus()
-	classBox:ClearFocus()
 	placeScroll(false)
 end
 
@@ -506,20 +502,22 @@ local function showForm(kind)
 	insertOpen = kind == "insert"
 	addOpen = kind == "add"
 	hideRemoveMenu()
+	commit:ClearAllPoints()
 	if insertOpen then
-		formLabel:SetText("Core name and class")
+		formLabel:SetText("Core name")
 		commit:SetText("Add name")
+		commit:SetPoint("LEFT", nameBox, "RIGHT", 12, 0)
 		pugCheck:Hide()
 		pugLabel:Hide()
 	else
-		formLabel:SetText("Name and class")
+		formLabel:SetText("Name")
+		commit:SetPoint("LEFT", pugCheck, "RIGHT", 78, 0)
 		pugCheck:SetChecked(false)
 		pugCheck:Show()
 		pugLabel:Show()
 		updateAddButton()
 	end
 	nameBox:SetText("")
-	classBox:SetText("")
 	form:Show()
 	placeScroll(true)
 	nameBox:SetFocus()
@@ -709,17 +707,19 @@ addBtn:SetScript("OnClick", function()
 end)
 cancelForm:SetScript("OnClick", hideForm)
 commit:SetScript("OnClick", function()
+	local typed = nameBox:GetText()
 	local err
 	if insertOpen or (addOpen and not pugCheck:GetChecked()) then
-		err = SK.List:Insert(nameBox:GetText(), classBox:GetText())
+		err = SK.List:Insert(typed)
 	elseif addOpen then
-		err = SK.List:AddPug(nameBox:GetText(), classBox:GetText())
+		err = SK.List:AddPug(typed)
 	end
 	if err then
 		message = err
 	else
 		message = ""
-		selected = SK.Trim(nameBox:GetText())
+		local raidName = SK.Roster and SK.Roster.Resolve and SK.Roster:Resolve(typed)
+		selected = raidName or SK.Trim(typed)
 		hideForm()
 	end
 	if SK.UI.RefreshList then

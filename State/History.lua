@@ -35,6 +35,35 @@ function SK.History:Events()
 	return SK.Saved:History().events
 end
 
+function SK.History:Outcome(event)
+	local action = event.action or ""
+	if action == "Bid" then
+		local where = event.bidPosition
+		if where == nil or where == "" then
+			if event.positionBefore then
+				where = tostring(event.positionBefore)
+			else
+				where = "unseeded"
+			end
+		end
+		local line = "Bid position " .. tostring(where)
+		if tostring(where) == "unseeded" and event.roll then
+			line = line .. " roll " .. tostring(event.roll)
+		end
+		return line
+	end
+	if action == "MS" or action == "OS" then
+		if event.roll then
+			return action .. " roll " .. tostring(event.roll)
+		end
+		return action
+	end
+	if action == "Disenchant" then
+		return "Disenchant"
+	end
+	return action
+end
+
 local function cell(value)
 	value = tostring(value or "")
 	value = string.gsub(value, "[\t\r\n]", " ")
@@ -42,7 +71,7 @@ local function cell(value)
 end
 
 function SK.History:ExportDiscord()
-	local lines = { "```", "id\ttime\ttype\taction\tname\tdetail\titem\troll\tpositionBefore\tpositionAfter\tofficer\tdelivered\tteamId\tteamName\tlistId\tlistName" }
+	local lines = { "```", "id\ttime\ttype\taction\tname\tdetail\titem\troll\tpositionBefore\tpositionAfter\tofficer\tdelivered\tteamId\tteamName\tlistId\tlistName\tbidPosition" }
 	local events = self:Events()
 	for i = 1, #events do
 		local event = events[i]
@@ -63,6 +92,7 @@ function SK.History:ExportDiscord()
 			cell(event.teamName),
 			cell(event.listId),
 			cell(event.listName),
+			cell(event.bidPosition),
 		}, "\t"))
 	end
 	table.insert(lines, "```")
@@ -129,6 +159,7 @@ function SK.History:Parse(text)
 					teamName = fields[14] ~= "" and fields[14] or nil,
 					listId = fields[15] ~= "" and fields[15] or nil,
 					listName = fields[16] ~= "" and fields[16] or nil,
+					bidPosition = fields[17] ~= "" and fields[17] or nil,
 				})
 			end
 		end

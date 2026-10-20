@@ -23,6 +23,7 @@ local function showBidDropTip(owner)
 	GameTooltip:AddLine("Below lowest bidder moves the winner to the spot just under the lowest other bidder. A sole bidder still goes last.", 1, 1, 1, true)
 	GameTooltip:AddLine("Someone set to hold keeps their position. The winner can still move past them. Only the list this item is on moves.", 1, 1, 1, true)
 	GameTooltip:Show()
+	SK.UI.LiftTooltip()
 end
 
 local function hookBidDropTip(owner)
@@ -146,25 +147,37 @@ local autoLabel = body:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 autoLabel:SetPoint("LEFT", autoCheck, "RIGHT", 2, 0)
 autoLabel:SetText("Auto add items when master looter")
 
+local bossCheck = CreateFrame("CheckButton", nil, body)
+bossCheck:SetSize(24, 24)
+bossCheck:SetPoint("TOPLEFT", 0, -238)
+bossCheck:SetNormalTexture("Interface\\Buttons\\UI-CheckBox-Up")
+bossCheck:SetPushedTexture("Interface\\Buttons\\UI-CheckBox-Down")
+bossCheck:SetHighlightTexture("Interface\\Buttons\\UI-CheckBox-Highlight", "ADD")
+bossCheck:SetCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check")
+
+local bossLabel = body:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+bossLabel:SetPoint("LEFT", bossCheck, "RIGHT", 2, 0)
+bossLabel:SetText("Announce Boss Loot in Raid Chat")
+
 local qualLabel = body:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-qualLabel:SetPoint("TOPLEFT", 4, -246)
+qualLabel:SetPoint("TOPLEFT", 4, -276)
 qualLabel:SetText("Auto add quality")
 
 local qualBtn = CreateFrame("Button", nil, body, "UIPanelButtonTemplate")
 qualBtn:SetSize(180, 22)
-qualBtn:SetPoint("TOPLEFT", 160, -242)
+qualBtn:SetPoint("TOPLEFT", 160, -272)
 qualBtn:SetText("Uncommon")
 
 local opacityLabel = body:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-opacityLabel:SetPoint("TOPLEFT", 4, -286)
+opacityLabel:SetPoint("TOPLEFT", 4, -508)
 opacityLabel:SetText("Background opacity")
 
 local opacityValue = body:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-opacityValue:SetPoint("TOPLEFT", 400, -286)
+opacityValue:SetPoint("TOPLEFT", 400, -508)
 opacityValue:SetText("95%")
 
 local opacitySlider = CreateFrame("Slider", nil, body)
-opacitySlider:SetPoint("TOPLEFT", 160, -282)
+opacitySlider:SetPoint("TOPLEFT", 160, -504)
 opacitySlider:SetSize(220, 16)
 opacitySlider:SetOrientation("HORIZONTAL")
 opacitySlider:SetMinMaxValues(0, 100)
@@ -187,13 +200,13 @@ local STATUS_ROWS = {
 }
 
 local statusHead = body:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-statusHead:SetPoint("TOPLEFT", 4, -318)
+statusHead:SetPoint("TOPLEFT", 4, -310)
 statusHead:SetText("Bench, Absent, and No-call")
 
 local statusWidgets = {}
 for i = 1, #STATUS_ROWS do
 	local info = STATUS_ROWS[i]
-	local y = -342 - (i - 1) * 30
+	local y = -334 - (i - 1) * 30
 	local label = body:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 	label:SetPoint("TOPLEFT", 4, y)
 	label:SetWidth(140)
@@ -251,7 +264,7 @@ for i = 1, #STATUS_ROWS do
 end
 
 local statusNote = body:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-statusNote:SetPoint("TOPLEFT", 4, -432)
+statusNote:SetPoint("TOPLEFT", 4, -424)
 statusNote:SetWidth(460)
 statusNote:SetJustifyH("LEFT")
 statusNote:SetJustifyV("TOP")
@@ -260,7 +273,7 @@ statusNote:SetHeight(44)
 statusNote:SetText("Hold and Raise apply when the status is set. Demote sets Hold, and moves them down that many positions on each list when you lock. Last place stays last.")
 
 local awayLabel = body:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-awayLabel:SetPoint("TOPLEFT", 4, -484)
+awayLabel:SetPoint("TOPLEFT", 4, -476)
 awayLabel:SetText("End raid when out of group and out of instance for")
 
 local awayBox = CreateFrame("EditBox", nil, body, "InputBoxTemplate")
@@ -276,7 +289,7 @@ awayMinutesLabel:SetText("minutes")
 
 local mapCheck = CreateFrame("CheckButton", nil, body)
 mapCheck:SetSize(24, 24)
-mapCheck:SetPoint("TOPLEFT", 0, -512)
+mapCheck:SetPoint("TOPLEFT", 0, -540)
 mapCheck:SetNormalTexture("Interface\\Buttons\\UI-CheckBox-Up")
 mapCheck:SetPushedTexture("Interface\\Buttons\\UI-CheckBox-Down")
 mapCheck:SetHighlightTexture("Interface\\Buttons\\UI-CheckBox-Highlight", "ADD")
@@ -288,12 +301,12 @@ mapLabel:SetText("Show minimap button")
 
 local resetBtn = CreateFrame("Button", nil, body, "UIPanelButtonTemplate")
 resetBtn:SetSize(200, 22)
-resetBtn:SetPoint("TOPLEFT", 4, -544)
+resetBtn:SetPoint("TOPLEFT", 4, -572)
 resetBtn:SetText("Reset all settings")
 
 local clearListBtn = CreateFrame("Button", nil, body, "UIPanelButtonTemplate")
 clearListBtn:SetSize(140, 22)
-clearListBtn:SetPoint("TOPLEFT", 4, -576)
+clearListBtn:SetPoint("TOPLEFT", 4, -604)
 clearListBtn:SetText("Clear list")
 
 local clearHistBtn = CreateFrame("Button", nil, body, "UIPanelButtonTemplate")
@@ -302,13 +315,13 @@ clearHistBtn:SetPoint("LEFT", clearListBtn, "RIGHT", 8, 0)
 clearHistBtn:SetText("Clear history")
 
 local foot = body:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-foot:SetPoint("TOPLEFT", 4, -608)
+foot:SetPoint("TOPLEFT", 4, -636)
 foot:SetWidth(460)
 foot:SetJustifyH("LEFT")
 foot:SetJustifyV("TOP")
 foot:SetWordWrap(true)
 foot:SetHeight(48)
-foot:SetText("Bid drop, the timer, end raid, the disenchanter, auto add, status defaults, and clear list stay with the officer. Opacity, the minimap button, window positions, and clear history stay on this character. Reset leaves the list and history.")
+foot:SetText("Bid drop, the timer, end raid, the disenchanter, auto add, boss loot announce, status defaults, and clear list stay with the officer. Opacity, the minimap button, window positions, and clear history stay on this character. Reset leaves the list and history.")
 
 local QUALITY = {
 	[0] = "Poor",
@@ -332,7 +345,7 @@ local function ensureMenu()
 		return menu
 	end
 	menu = CreateFrame("Frame", "SKFSettingsMenu", UIParent, "BackdropTemplate")
-	menu:SetFrameStrata("DIALOG")
+	menu:SetFrameStrata("TOOLTIP")
 	menu:SetClampedToScreen(true)
 	menu:SetBackdrop({
 		bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -423,6 +436,7 @@ local function openMenu(anchor, labels, onPick)
 		end
 	end)
 	popup:Show()
+	popup:Raise()
 end
 
 local function raidNames()
@@ -697,11 +711,12 @@ local function showContext(hasRename, onRename, onRemove)
 	ctx:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x / scale, y / scale)
 	ctx.arming = true
 	ctx:Show()
+	ctx:Raise()
 end
 
 local ask = CreateFrame("Frame", "SKFAskName", UIParent, "BackdropTemplate")
 ask:SetSize(320, 128)
-ask:SetFrameStrata("DIALOG")
+ask:SetFrameStrata("TOOLTIP")
 ask:SetClampedToScreen(true)
 ask:SetBackdrop(DIALOG)
 ask:Hide()
@@ -734,6 +749,7 @@ local function showAsk(title, acceptLabel, initial, onAccept)
 	ask.edit:SetText(initial or "")
 	ask.onAccept = onAccept
 	ask:Show()
+	ask:Raise()
 	ask.edit:SetFocus()
 	ask.edit:HighlightText()
 end
@@ -759,7 +775,7 @@ end)
 
 local newList = CreateFrame("Frame", "SKFNewList", UIParent, "BackdropTemplate")
 newList:SetSize(340, 168)
-newList:SetFrameStrata("HIGH")
+newList:SetFrameStrata("TOOLTIP")
 newList:SetClampedToScreen(true)
 newList:SetBackdrop(DIALOG)
 newList:Hide()
@@ -802,6 +818,7 @@ local function openNewList()
 	listCopyBtn:SetText("Blank positions")
 	newListEdit:SetText("")
 	newList:Show()
+	newList:Raise()
 	newListEdit:SetFocus()
 end
 
@@ -981,6 +998,8 @@ function refresh()
 	mapCheck:SetChecked(settings.minimapShown ~= false)
 	autoCheck:SetChecked(settings.autoAdd and true or false)
 	autoCheck:SetEnabled(officer)
+	bossCheck:SetChecked(settings.announceBoss and true or false)
+	bossCheck:SetEnabled(officer)
 	qualBtn:SetText((QUALITY[settings.autoQuality or 2] or "Uncommon") .. " and up")
 	qualBtn:SetEnabled(officer)
 	for n = 1, #STATUS_ROWS do
@@ -1183,6 +1202,9 @@ mapCheck:SetScript("OnClick", function(self)
 end)
 autoCheck:SetScript("OnClick", function(self)
 	SK.Settings:SetAutoAdd(self:GetChecked())
+end)
+bossCheck:SetScript("OnClick", function(self)
+	SK.Settings:SetAnnounceBoss(self:GetChecked())
 end)
 qualBtn:SetScript("OnClick", function(self)
 	local labels = {}

@@ -9,7 +9,7 @@ local BACKDROP = {
 
 local frame = CreateFrame("Frame", "SKFGargulChoice", UIParent, "BackdropTemplate")
 frame:SetSize(460, 180)
-frame:SetFrameStrata("DIALOG")
+frame:SetFrameStrata("TOOLTIP")
 frame:SetClampedToScreen(true)
 frame:SetMovable(true)
 frame:EnableMouse(true)
@@ -55,6 +55,7 @@ function SK.UI.ShowGargulChoice()
 		return
 	end
 	frame:Show()
+	frame:Raise()
 end
 
 function SK.UI.HideGargulChoice()

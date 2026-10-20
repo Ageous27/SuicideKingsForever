@@ -10,6 +10,7 @@ local DEFAULTS = {
 		disenchanter = "",
 		autoAdd = true,
 		autoQuality = 2,
+		announceBoss = false,
 		opacity = 0.95,
 		benchMode = "raise",
 		benchSteps = 1,

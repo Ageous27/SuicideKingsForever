@@ -372,7 +372,7 @@ continueBtn:Hide()
 
 local ask = CreateFrame("Frame", "SKFSetupAsk", UIParent, "BackdropTemplate")
 ask:SetSize(320, 128)
-ask:SetFrameStrata("DIALOG")
+ask:SetFrameStrata("TOOLTIP")
 ask:SetClampedToScreen(true)
 ask:SetBackdrop({
 	bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -511,6 +511,7 @@ end)
 newTeamBtn:SetScript("OnClick", function()
 	ask.edit:SetText("")
 	ask:Show()
+	ask:Raise()
 	ask.edit:SetFocus()
 end)
 
@@ -721,7 +722,7 @@ function refresh()
 		local row = list[i]
 		button.rowName = row.name
 		button.pos:SetText(row.position and tostring(row.position) or "—")
-		button.name:SetText(row.name)
+		button.name:SetText(row.name .. (SK.Session.PlusSuffix and SK.Session:PlusSuffix(row.name) or ""))
 		button.name:SetTextColor(classColor(row.class))
 		button.class:SetText(row.class)
 		button.status:SetText(SK.List.StatusText(row))
@@ -785,6 +786,11 @@ end
 
 SK.Events:On("SK_READY", refresh)
 SK.Events:On("SK_LIST_CHANGED", refresh)
+SK.Events:On("SK_SESSION", function()
+	if frame:IsShown() then
+		refresh()
+	end
+end)
 SK.Events:Register("GROUP_ROSTER_UPDATE", function()
 	if frame:IsShown() then
 		refresh()

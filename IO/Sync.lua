@@ -283,7 +283,10 @@ local function onAddon(prefix, text, _, sender)
 	end
 	if kind == "G" then
 		if sender ~= me and not SK.Session:IsOfficer() then
-			local drop, timer, countdown, disenchanter, autoAdd, autoQuality, statusRules, awayMinutes = string.match(text, "^G,([^,]+),([^,]+),([^,]+),([^,]*),([01]),(%d+),([^,]*),(%d+)$")
+			local drop, timer, countdown, disenchanter, autoAdd, autoQuality, statusRules, awayMinutes, announceBoss = string.match(text, "^G,([^,]+),([^,]+),([^,]+),([^,]*),([01]),(%d+),([^,]*),(%d+),([01])$")
+			if not drop then
+				drop, timer, countdown, disenchanter, autoAdd, autoQuality, statusRules, awayMinutes = string.match(text, "^G,([^,]+),([^,]+),([^,]+),([^,]*),([01]),(%d+),([^,]*),(%d+)$")
+			end
 			if not drop then
 				drop, timer, countdown, disenchanter, autoAdd, autoQuality, statusRules = string.match(text, "^G,([^,]+),([^,]+),([^,]+),([^,]*),([01]),(%d+),([^,]*)$")
 			end
@@ -294,7 +297,7 @@ local function onAddon(prefix, text, _, sender)
 				drop, timer, countdown = string.match(text, "^G,([^,]+),([^,]+),([^,]+)$")
 			end
 			if drop then
-				SK.Settings:ApplyRemote(drop, timer, countdown, disenchanter, autoAdd, autoQuality, statusRules, awayMinutes)
+				SK.Settings:ApplyRemote(drop, timer, countdown, disenchanter, autoAdd, autoQuality, statusRules, awayMinutes, announceBoss)
 			end
 		end
 		return
@@ -426,7 +429,8 @@ function SK.Sync:BroadcastSettings()
 		settings.autoAdd and "1" or "0",
 		tostring(settings.autoQuality or 2),
 		SK.Settings:PackStatusRules(),
-		tostring(settings.awayMinutes or 10)
+		tostring(settings.awayMinutes or 10),
+		settings.announceBoss and "1" or "0"
 	))
 end
 

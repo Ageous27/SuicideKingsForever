@@ -9,7 +9,7 @@ local BACKDROP = {
 
 local frame = CreateFrame("Frame", "SKFRaiderPopup", UIParent, "BackdropTemplate")
 frame:SetSize(420, 210)
-frame:SetFrameStrata("DIALOG")
+frame:SetFrameStrata("FULLSCREEN_DIALOG")
 frame:SetClampedToScreen(true)
 frame:SetMovable(true)
 frame:EnableMouse(true)
@@ -152,7 +152,7 @@ local function sendChoice(choice)
 		if where and SK.Chat and SK.Chat.AnnounceBid then
 			SK.Chat:AnnounceBid(row and row.name or name, where)
 		end
-		if unseeded and SK.Chat and SK.Chat.RollFor then
+		if SK.Session:PugInRaid() and SK.Chat and SK.Chat.RollFor then
 			SK.Chat:RollFor("Bid")
 			return
 		end

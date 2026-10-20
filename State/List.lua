@@ -429,6 +429,27 @@ function SK.List:ClearPosBase()
 	SK.Saved:Session().posBase = nil
 end
 
+local function namedFromGroup(name, class)
+	name = SK.Trim(name)
+	if name == "" then
+		return "", "", "Enter a name."
+	end
+	local className = SK.ClassName(class) or ""
+	if SK.Roster and SK.Roster.Resolve then
+		local raidName, raidClass, which = SK.Roster:Resolve(name)
+		if which == "many" then
+			return "", "", "More than one person in the group has that name."
+		end
+		if raidName then
+			name = raidName
+			if type(raidClass) == "string" and raidClass ~= "" then
+				className = SK.ClassName(raidClass) or raidClass
+			end
+		end
+	end
+	return name, className, nil
+end
+
 function SK.List:Insert(name, class)
 	if not SK.Session:IsOfficer() then
 		return "Officer only"
@@ -436,16 +457,13 @@ function SK.List:Insert(name, class)
 	if SK.Session:TeamIsLocked() then
 		return "The raid is locked."
 	end
-	name = SK.Trim(name)
-	if name == "" then
-		return "Enter a name."
+	local className, err
+	name, className, err = namedFromGroup(name, class)
+	if err then
+		return err
 	end
 	if self:Find(name) then
 		return "That name is already on the list."
-	end
-	local className = SK.ClassName(class)
-	if not className then
-		return "Unknown class."
 	end
 	local list = SK.Saved:List()
 	local row = { name = name, class = className, position = nil, status = nil, pug = false }
@@ -454,7 +472,9 @@ function SK.List:Insert(name, class)
 		row.status = person.status
 		row.rolls = person.rolls
 		row.hold = person.hold
-		row.class = person.class or className
+		if className == "" and person.class and person.class ~= "" then
+			row.class = person.class
+		end
 	end
 	local seeding = SK.Session:IsSeeding()
 	if not seeding then
@@ -541,9 +561,10 @@ function SK.List:AddPug(name, class)
 	if SK.Session:TeamIsLocked() then
 		return "The raid is locked."
 	end
-	name = SK.Trim(name)
-	if name == "" then
-		return "Enter a name."
+	local className, err
+	name, className, err = namedFromGroup(name, class)
+	if err then
+		return err
 	end
 	if self:Find(name) then
 		return "That name is already on the list."
@@ -551,10 +572,6 @@ function SK.List:AddPug(name, class)
 	local person = SK.Teams and SK.Teams:Person(name)
 	if person and not person.pug then
 		return "That name is already on this team."
-	end
-	local className = SK.ClassName(class)
-	if not className then
-		return "Unknown class."
 	end
 	table.insert(SK.Saved:List(), {
 		name = name,
@@ -633,9 +650,12 @@ function SK.List:EndRaid()
 	end
 	local session = SK.Saved:Session()
 	session.raidId = nil
+	session.nocallRaid = nil
 	session.awaySince = nil
 	session.raidSawGroup = nil
 	session.raidOfficer = nil
+	session.blockGargul = nil
+	session.plus = nil
 	touch("endraid", nil, table.concat(dropped, ", "))
 	return nil
 end

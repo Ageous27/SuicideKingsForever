@@ -108,18 +108,71 @@ liveHit:SetPoint("RIGHT", right, "RIGHT", -96, 0)
 liveHit:SetHeight(36)
 liveHit:RegisterForClicks("LeftButtonUp")
 
+local bookBtn = CreateFrame("Button", nil, right)
+bookBtn:SetSize(22, 22)
+bookBtn:SetPoint("TOPRIGHT", right, "TOPRIGHT", 0, -4)
+bookBtn:SetNormalTexture("Interface\\Icons\\INV_Misc_Book_09")
+bookBtn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+bookBtn:SetScript("OnClick", function()
+	if SK.UI.ShowAwardHistory then
+		SK.UI.ShowAwardHistory()
+	end
+end)
+bookBtn:SetScript("OnEnter", function(self)
+	if not GameTooltip then
+		return
+	end
+	GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+	GameTooltip:SetText("Award history")
+	GameTooltip:Show()
+	if SK.UI.LiftTooltip then
+		SK.UI.LiftTooltip()
+	end
+end)
+bookBtn:SetScript("OnLeave", function()
+	if GameTooltip then
+		GameTooltip:Hide()
+	end
+end)
+
 local timerText = right:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-timerText:SetPoint("TOPRIGHT", right, "TOPRIGHT", 0, -8)
+timerText:SetPoint("RIGHT", bookBtn, "LEFT", -6, 0)
 timerText:SetText("")
 
-local header = right:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-header:SetPoint("TOPLEFT", icon, "BOTTOMLEFT", 0, -10)
-header:SetPoint("RIGHT", right, "RIGHT", -4, 0)
-header:SetJustifyH("LEFT")
-header:SetText("#   Name            Response   Roll   Pos   Result")
+local awardBtn = CreateFrame("Button", nil, right, "UIPanelButtonTemplate")
+awardBtn:SetSize(90, 22)
+awardBtn:SetPoint("TOPLEFT", icon, "BOTTOMLEFT", 0, -4)
+awardBtn:SetText("Award")
+
+local deBtn = CreateFrame("Button", nil, right, "UIPanelButtonTemplate")
+deBtn:SetSize(110, 22)
+deBtn:SetPoint("TOPRIGHT", right, "TOPRIGHT", 0, -40)
+deBtn:SetText("Disenchant")
+
+local ROLL_COLS = {
+	{ field = "num", text = "#", x = 4, w = 22 },
+	{ field = "name", text = "Name", x = 28, w = 110 },
+	{ field = "response", text = "Response", x = 140, w = 78 },
+	{ field = "roll", text = "Roll", x = 220, w = 36 },
+	{ field = "pos", text = "Pos", x = 258, w = 36 },
+	{ field = "result", text = "Result", x = 296, w = 120 },
+}
+
+local headerRow = CreateFrame("Frame", nil, right)
+headerRow:SetPoint("TOPLEFT", awardBtn, "BOTTOMLEFT", 0, -6)
+headerRow:SetPoint("RIGHT", right, "RIGHT", 0, 0)
+headerRow:SetHeight(14)
+for i = 1, #ROLL_COLS do
+	local spec = ROLL_COLS[i]
+	local text = headerRow:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	text:SetPoint("LEFT", spec.x + 2, 0)
+	text:SetWidth(spec.w)
+	text:SetJustifyH("LEFT")
+	text:SetText(spec.text)
+end
 
 local liveBox = sectionBox(right)
-liveBox:SetPoint("TOPLEFT", header, "BOTTOMLEFT", -4, -4)
+liveBox:SetPoint("TOPLEFT", headerRow, "BOTTOMLEFT", -4, -4)
 liveBox:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", 0, 0)
 local liveScroll, liveContent = scrollArea(liveBox)
 liveScroll:SetPoint("TOPLEFT", 6, -6)
@@ -129,7 +182,7 @@ local note = body:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 note:SetPoint("BOTTOMLEFT", 4, 28)
 note:SetPoint("BOTTOMRIGHT", -4, 28)
 note:SetJustifyH("LEFT")
-note:SetText("/sk or /skf opens this window. Alt-click an item, or shift-click one into the add box. Right-click a row, then click Remove.")
+note:SetText("/sk or /skf opens this window. Alt-left click an item, or shift-click one into the add box. Right-click a row, then click Remove.")
 
 local function makeButton(text, width, x)
 	local button = CreateFrame("Button", nil, body, "UIPanelButtonTemplate")
@@ -141,9 +194,65 @@ end
 
 local startBtn = makeButton("Start", 80, 0)
 local endBtn = makeButton("End", 70, 88)
-local awardBtn = makeButton("Award", 90, 166)
-local deBtn = makeButton("Disenchant", 110, 264)
-local cancelBtn = makeButton("Cancel", 80, 382)
+local cancelBtn = makeButton("Cancel", 80, 166)
+
+local blockLabel = body:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+blockLabel:SetPoint("BOTTOMRIGHT", -4, 4)
+blockLabel:SetText("Block Gargul roll window")
+
+local blockCheck = CreateFrame("CheckButton", nil, body)
+blockCheck:SetSize(24, 24)
+blockCheck:SetPoint("RIGHT", blockLabel, "LEFT", -2, 0)
+blockCheck:SetNormalTexture("Interface\\Buttons\\UI-CheckBox-Up")
+blockCheck:SetPushedTexture("Interface\\Buttons\\UI-CheckBox-Down")
+blockCheck:SetHighlightTexture("Interface\\Buttons\\UI-CheckBox-Highlight", "ADD")
+blockCheck:SetCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check")
+
+local function showBlockTip(self)
+	if not GameTooltip then
+		return
+	end
+	GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+	GameTooltip:SetText("Block Gargul roll window")
+	GameTooltip:AddLine("Alt-left click adds the item here and does not open Gargul. Clears at the end of the raid.", 1, 1, 1, true)
+	GameTooltip:Show()
+	if SK.UI.LiftTooltip then
+		SK.UI.LiftTooltip()
+	end
+end
+
+local function hideBlockTip()
+	if GameTooltip then
+		GameTooltip:Hide()
+	end
+end
+
+local function checkedValue(button)
+	local value = button:GetChecked()
+	return value == true or value == 1
+end
+
+local function applyBlock(enabled)
+	blockCheck:SetChecked(enabled and true or false)
+	if SK.Gargul then
+		SK.Gargul:SetBlockRollOff(enabled)
+	end
+end
+
+blockCheck:SetScript("OnClick", function(self)
+	applyBlock(checkedValue(self))
+end)
+blockCheck:SetScript("OnEnter", showBlockTip)
+blockCheck:SetScript("OnLeave", hideBlockTip)
+
+local blockHit = CreateFrame("Button", nil, body)
+blockHit:SetPoint("TOPLEFT", blockLabel, "TOPLEFT", -2, 2)
+blockHit:SetPoint("BOTTOMRIGHT", blockLabel, "BOTTOMRIGHT", 2, -2)
+blockHit:SetScript("OnClick", function()
+	applyBlock(not checkedValue(blockCheck))
+end)
+blockHit:SetScript("OnEnter", showBlockTip)
+blockHit:SetScript("OnLeave", hideBlockTip)
 
 local waitingButtons = {}
 local tradeButtons = {}
@@ -161,11 +270,13 @@ local function classColor(class)
 	return 1, 1, 1
 end
 
-local function paint(button, selected)
+local function paint(button, selected, warn)
 	if not button.bg.SetColorTexture then
 		return
 	end
-	if selected then
+	if warn then
+		button.bg:SetColorTexture(0.85, 0.45, 0.1, 0.35)
+	elseif selected then
 		button.bg:SetColorTexture(1, 0.82, 0, 0.18)
 	elseif button.stripe then
 		button.bg:SetColorTexture(1, 1, 1, 0.04)
@@ -182,6 +293,7 @@ local function showItemTip(owner, entry)
 	GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
 	if pcall(GameTooltip.SetHyperlink, GameTooltip, link) then
 		GameTooltip:Show()
+		SK.UI.LiftTooltip()
 	else
 		GameTooltip:Hide()
 	end
@@ -265,19 +377,14 @@ local function responseButton(index)
 	button.bg = button:CreateTexture(nil, "BACKGROUND")
 	button.bg:SetAllPoints()
 	button.stripe = index % 2 == 0
-	local function col(x, w)
+	for i = 1, #ROLL_COLS do
+		local spec = ROLL_COLS[i]
 		local text = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		text:SetPoint("LEFT", x, 0)
-		text:SetWidth(w)
+		text:SetPoint("LEFT", spec.x, 0)
+		text:SetWidth(spec.w)
 		text:SetJustifyH("LEFT")
-		return text
+		button[spec.field] = text
 	end
-	button.num = col(4, 22)
-	button.name = col(28, 110)
-	button.response = col(140, 78)
-	button.roll = col(220, 36)
-	button.pos = col(258, 36)
-	button.result = col(296, 120)
 	button.strike = button:CreateTexture(nil, "OVERLAY")
 	button.strike:SetDrawLayer("OVERLAY", 7)
 	button.strike:SetColorTexture(0.82, 0.82, 0.82, 0.95)
@@ -475,6 +582,7 @@ local function showRemoveMenu(kind, item)
 	removeMenu:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", (x / scale) + 2, y / scale)
 	removeMenu.arming = true
 	removeMenu:Show()
+	removeMenu:Raise()
 end
 
 removeMenu:SetScript("OnUpdate", function(self)
@@ -602,8 +710,9 @@ function refresh()
 			local button = responseButton(i)
 			local listRow = SK.List:Find(row.name)
 			local duplicate = row.duplicate or row.choice == "Duplicate"
+			local mustRoll = row.choice == "Bid" and not row.roll and not duplicate and SK.Session:PugInRaid()
 			button.num:SetText(tostring(i))
-			button.name:SetText(row.name)
+			button.name:SetText(row.name .. SK.Session:PlusSuffix(row.name))
 			if duplicate then
 				button.name:SetTextColor(0.55, 0.55, 0.55)
 				button.num:SetTextColor(0.55, 0.55, 0.55)
@@ -624,13 +733,18 @@ function refresh()
 				else
 					button.name:SetTextColor(1, 1, 1)
 				end
-				button.response:SetText(row.choice or "")
+				if mustRoll then
+					button.response:SetText("Bid - Must Roll")
+					button.response:SetTextColor(1, 0.82, 0)
+				else
+					button.response:SetText(row.choice or "")
+				end
 				button.strike:Hide()
 			end
 			button.roll:SetText(row.roll and tostring(row.roll) or "-")
 			button.pos:SetText(row.position and tostring(row.position) or "-")
 			button.result:SetText(resultText(row, chosen))
-			paint(button, (not duplicate) and chosen and chosen.name == row.name)
+			paint(button, (not duplicate) and chosen and chosen.name == row.name, mustRoll)
 			button:SetScript("OnClick", function()
 				if duplicate then
 					return
@@ -670,7 +784,7 @@ function refresh()
 		if sessionNote ~= "" then
 			note:SetText(sessionNote)
 		else
-			note:SetText("/sk or /skf opens this window. Alt-click an item, or shift-click one into the add box. Right-click a row, then click Remove.")
+			note:SetText("/sk or /skf opens this window. Alt-left click an item, or shift-click one into the add box. Right-click a row, then click Remove.")
 		end
 	end
 	local selectedItem = SK.Session:Selected()
@@ -683,6 +797,7 @@ function refresh()
 	awardBtn:SetEnabled(officer and live and not collecting and chosen ~= nil)
 	deBtn:SetEnabled(officer and live and not collecting)
 	cancelBtn:SetEnabled(officer and live and not collecting)
+	blockCheck:SetChecked(SK.Gargul and SK.Gargul:BlockRollOff() and true or false)
 end
 
 startBtn:SetScript("OnClick", function()
@@ -825,6 +940,20 @@ end
 
 local hooked = {}
 
+local function altLeftClick(button)
+	if not IsAltKeyDown() or IsShiftKeyDown() or IsControlKeyDown() then
+		return false
+	end
+	if type(button) ~= "string" or button == "" then
+		if GetMouseButtonClicked then
+			button = GetMouseButtonClicked()
+		elseif IsMouseButtonDown and IsMouseButtonDown("LeftButton") then
+			button = "LeftButton"
+		end
+	end
+	return button == "LeftButton"
+end
+
 local function hookClick(object, method)
 	if type(hooksecurefunc) ~= "function" or type(object) ~= "table" or type(object[method]) ~= "function" then
 		return
@@ -834,11 +963,11 @@ local function hookClick(object, method)
 		return
 	end
 	hooked[key] = true
-	hooksecurefunc(object, method, function(self)
+	hooksecurefunc(object, method, function(self, button)
 		if shiftIntoAddBox(linkFromButton(self)) then
 			return
 		end
-		if IsAltKeyDown() then
+		if altLeftClick(button) then
 			takeItem(linkFromButton(self))
 		end
 	end)
@@ -851,7 +980,7 @@ local function hookItemClicks()
 	if type(SetItemRef) == "function" and not hooked.SetItemRef then
 		hooked.SetItemRef = true
 		hooksecurefunc("SetItemRef", function(link, _, button)
-			if button == "LeftButton" and IsAltKeyDown() then
+			if altLeftClick(button) then
 				takeItem(link)
 			end
 		end)
@@ -863,7 +992,7 @@ local function hookItemClicks()
 			if shiftIntoAddBox(link) then
 				return true
 			end
-			if IsAltKeyDown() then
+			if altLeftClick() then
 				takeItem(link)
 			end
 			return originalModified(link, ...)
@@ -896,11 +1025,11 @@ local function hookItemClicks()
 	hookClick(LootFrameItemMixin, "OnClick")
 	if type(ContainerFrameItemButton_OnModifiedClick) == "function" and not hooked.bagFunc then
 		hooked.bagFunc = true
-		hooksecurefunc("ContainerFrameItemButton_OnModifiedClick", function(self)
+		hooksecurefunc("ContainerFrameItemButton_OnModifiedClick", function(self, button)
 			if shiftIntoAddBox(linkFromButton(self)) then
 				return
 			end
-			if IsAltKeyDown() then
+			if altLeftClick(button) then
 				takeItem(linkFromButton(self))
 			end
 		end)
@@ -910,11 +1039,11 @@ local function hookItemClicks()
 			local button = _G["ContainerFrame" .. bag .. "Item" .. slot]
 			if button and not button.skfAlt then
 				button.skfAlt = true
-				button:HookScript("OnClick", function(self)
+				button:HookScript("OnClick", function(self, button)
 					if shiftIntoAddBox(linkFromButton(self)) then
 						return
 					end
-					if IsAltKeyDown() then
+					if altLeftClick(button) then
 						takeItem(linkFromButton(self))
 					end
 				end)
@@ -932,12 +1061,12 @@ SK.Events:Register("LOOT_OPENED", function()
 		local button = _G["LootButton" .. i]
 		if button and not button.skfAlt then
 			button.skfAlt = true
-			button:HookScript("OnClick", function(self)
+			button:HookScript("OnClick", function(self, button)
 				local lootLink = self.link or (GetLootSlotLink and GetLootSlotLink(self:GetID() or i))
 				if shiftIntoAddBox(lootLink) then
 					return
 				end
-				if IsAltKeyDown() then
+				if altLeftClick(button) then
 					takeItem(lootLink)
 				end
 			end)
@@ -947,12 +1076,12 @@ SK.Events:Register("LOOT_OPENED", function()
 			local element = _G["LootFrameElement" .. i] or _G["LootButton" .. i]
 			if element and lootLink and not element.skfAlt then
 				element.skfAlt = true
-				element:HookScript("OnClick", function()
+				element:HookScript("OnClick", function(_, button)
 					local lootLink = GetLootSlotLink(i)
 					if shiftIntoAddBox(lootLink) then
 						return
 					end
-					if IsAltKeyDown() then
+					if altLeftClick(button) then
 						takeItem(lootLink)
 					end
 				end)
@@ -965,6 +1094,11 @@ SK.Events:On("SK_READY", refresh)
 SK.Events:On("SK_SESSION", function()
 	message = ""
 	refresh()
+end)
+SK.Events:On("SK_LIST_CHANGED", function(action)
+	if action == "endraid" then
+		blockCheck:SetChecked(false)
+	end
 end)
 SK.Events:On("SK_OFFICER", function()
 	if frame:IsShown() then

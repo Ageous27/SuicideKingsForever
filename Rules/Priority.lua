@@ -92,7 +92,7 @@ local function appendAll(into, list)
 	end
 end
 
-function SK.Rules.Priority.Decide(responses, seeding, rolloff)
+function SK.Rules.Priority.Decide(responses, seeding, rolloff, contest)
 	local bids = {}
 	local ms = {}
 	local os = {}
@@ -142,11 +142,124 @@ function SK.Rules.Priority.Decide(responses, seeding, rolloff)
 	table.sort(bids, byBid)
 	table.sort(ms, byRoll)
 	table.sort(os, byRoll)
+	local showBids, showMs, showOs, showPasses, showDuplicates = bids, ms, os, passes, duplicates
 
 	local winner
 	local tie
 	local ordered = {}
-	if seeding and not rolloff and (#unseededBids + #unseededMs + #unseededOs) > 0 then
+	local contestHandled = false
+	if contest and contest.active and not (rolloff and rolloff.side) then
+		local function plusCount(person)
+			local map = contest.plus
+			if type(map) ~= "table" then
+				return 0
+			end
+			return map[string.lower(person.name or "")] or 0
+		end
+		local pugMs = {}
+		local coreMs = {}
+		local coreOs = {}
+		local coreBids = {}
+		local coreUnseededBids = {}
+		local coreUnseededMs = {}
+		local coreUnseededOs = {}
+		for i = 1, #ms do
+			if ms[i].pug then
+				table.insert(pugMs, ms[i])
+			else
+				table.insert(coreMs, ms[i])
+				if ms[i].unseeded then
+					table.insert(coreUnseededMs, ms[i])
+				end
+			end
+		end
+		for i = 1, #os do
+			if not os[i].pug then
+				table.insert(coreOs, os[i])
+				if os[i].unseeded then
+					table.insert(coreUnseededOs, os[i])
+				end
+			end
+		end
+		for i = 1, #bids do
+			if not bids[i].pug then
+				table.insert(coreBids, bids[i])
+				if bids[i].unseeded then
+					table.insert(coreUnseededBids, bids[i])
+				end
+			end
+		end
+		if #pugMs > 0 then
+			contestHandled = true
+			local plus0 = false
+			for i = 1, #pugMs do
+				if plusCount(pugMs[i]) < 1 then
+					plus0 = true
+				end
+			end
+			local blocked = plus0 or #coreBids > 0 or #coreMs > 0
+			local eligible = {}
+			for i = 1, #coreMs do
+				if coreMs[i].roll then
+					table.insert(eligible, coreMs[i])
+				end
+			end
+			for i = 1, #coreBids do
+				if coreBids[i].roll then
+					table.insert(eligible, coreBids[i])
+				end
+			end
+			for i = 1, #pugMs do
+				if pugMs[i].roll and (plusCount(pugMs[i]) < 1 or not blocked) then
+					table.insert(eligible, pugMs[i])
+				end
+			end
+			local pugWon = false
+			if #eligible > 0 then
+				local top = eligible[1].roll or 0
+				for i = 2, #eligible do
+					local roll = eligible[i].roll or 0
+					if roll > top then
+						top = roll
+					end
+				end
+				local tied = {}
+				local pugTied = false
+				local coreTied = false
+				for i = 1, #eligible do
+					if (eligible[i].roll or 0) == top then
+						table.insert(tied, eligible[i])
+						if tied[#tied].pug then
+							pugTied = true
+						else
+							coreTied = true
+						end
+					end
+				end
+				if pugTied and coreTied then
+					tie = { tier = "MS", names = tied, side = true }
+					pugWon = true
+				elseif pugTied then
+					winner, tie = pickRolls(tied)
+					if tie then
+						tie = { tier = "MS", names = tie }
+					end
+					pugWon = true
+				end
+			end
+			if not pugWon then
+				bids = coreBids
+				ms = coreMs
+				os = coreOs
+				unseededBids = coreUnseededBids
+				unseededMs = coreUnseededMs
+				unseededOs = coreUnseededOs
+			end
+		end
+	end
+	if contestHandled and (winner or tie) then
+		winner = winner
+	elseif seeding and not rolloff and (#unseededBids + #unseededMs + #unseededOs) > 0 then
 		local pool = unseededMs
 		local tier = "MS"
 		if #unseededBids > 0 then
@@ -173,10 +286,10 @@ function SK.Rules.Priority.Decide(responses, seeding, rolloff)
 			tie = { tier = "OS", names = tie }
 		end
 	end
-	appendAll(ordered, bids)
-	appendAll(ordered, ms)
-	appendAll(ordered, os)
-	appendAll(ordered, passes)
-	appendAll(ordered, duplicates)
+	appendAll(ordered, showBids)
+	appendAll(ordered, showMs)
+	appendAll(ordered, showOs)
+	appendAll(ordered, showPasses)
+	appendAll(ordered, showDuplicates)
 	return { ordered = ordered, winner = winner, tie = tie }
 end

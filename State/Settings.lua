@@ -66,6 +66,14 @@ function SK.Settings:SetAutoAdd(enabled)
 	SK.Events:Fire("SK_SETTINGS")
 end
 
+function SK.Settings:SetAnnounceBoss(enabled)
+	if not SK.Session:IsOfficer() then
+		return
+	end
+	self:Get().announceBoss = enabled and true or false
+	SK.Events:Fire("SK_SETTINGS")
+end
+
 function SK.Settings:SetAutoQuality(quality)
 	if not SK.Session:IsOfficer() then
 		return
@@ -234,6 +242,7 @@ function SK.Settings:Reset()
 		settings.disenchanter = ""
 		settings.autoAdd = true
 		settings.autoQuality = 2
+		settings.announceBoss = false
 		settings.benchMode = "raise"
 		settings.benchSteps = 1
 		settings.absentMode = "hold"
@@ -254,7 +263,7 @@ function SK.Settings:Reset()
 	return nil
 end
 
-function SK.Settings:ApplyRemote(drop, timer, countdown, disenchanter, autoAdd, autoQuality, statusRules, awayMinutes)
+function SK.Settings:ApplyRemote(drop, timer, countdown, disenchanter, autoAdd, autoQuality, statusRules, awayMinutes, announceBoss)
 	if SK.Session:IsOfficer() then
 		return
 	end
@@ -270,6 +279,9 @@ function SK.Settings:ApplyRemote(drop, timer, countdown, disenchanter, autoAdd, 
 	end
 	if autoQuality ~= nil then
 		settings.autoQuality = tonumber(autoQuality) or settings.autoQuality or 2
+	end
+	if announceBoss ~= nil then
+		settings.announceBoss = announceBoss == "1" or announceBoss == true
 	end
 	if statusRules ~= nil then
 		self:ApplyStatusRules(statusRules)

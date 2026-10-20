@@ -9,7 +9,7 @@ local BACKDROP = {
 
 local frame = CreateFrame("Frame", "SKFLateJoin", UIParent, "BackdropTemplate")
 frame:SetSize(460, 260)
-frame:SetFrameStrata("DIALOG")
+frame:SetFrameStrata("TOOLTIP")
 frame:SetClampedToScreen(true)
 frame:SetMovable(true)
 frame:EnableMouse(true)
@@ -122,6 +122,7 @@ local function refresh()
 		applyPoint()
 		frame:Show()
 	end
+	frame:Raise()
 end
 
 yesBtn:SetScript("OnClick", function()

@@ -50,6 +50,52 @@ function SK.Gargul:BlockGargulClicks()
 	return self.engine == "skf" or self.asking and true or false
 end
 
+function SK.Gargul:BlockRollOff()
+	local session = SK.Saved and SK.Saved:Session()
+	return session and session.blockGargul and true or false
+end
+
+function SK.Gargul:CloseMasterLooter()
+	local GL = self:Api()
+	if not GL or not GL.MasterLooterUI or not GL.MasterLooterUI.close then
+		return
+	end
+	pcall(function()
+		GL.MasterLooterUI:close()
+	end)
+end
+
+function SK.Gargul:SetBlockRollOff(enabled)
+	local session = SK.Saved and SK.Saved:Session()
+	if not session then
+		return
+	end
+	session.blockGargul = (enabled == true or enabled == 1) and true or nil
+	if session.blockGargul then
+		self:CloseMasterLooter()
+	end
+end
+
+local drawWrapped = false
+
+function SK.Gargul:WrapRollOff()
+	if drawWrapped then
+		return
+	end
+	local GL = self:Api()
+	if not GL or type(GL.MasterLooterUI) ~= "table" or type(GL.MasterLooterUI.draw) ~= "function" then
+		return
+	end
+	drawWrapped = true
+	local original = GL.MasterLooterUI.draw
+	function GL.MasterLooterUI:draw(...)
+		if SK.Gargul:BlockRollOff() then
+			return
+		end
+		return original(self, ...)
+	end
+end
+
 function SK.Gargul:ChoiceForRange(low, high)
 	low = tonumber(low)
 	high = tonumber(high)
@@ -137,7 +183,7 @@ function SK.Gargul:Broadcast()
 	if not self.engine or not SK.Sync or not SK.Sync.BroadcastLootEngine then
 		return
 	end
-	if not SK.Session:IsMasterLooter() then
+	if not SK.Session or not SK.Session:IsOfficer() then
 		return
 	end
 	SK.Sync:BroadcastLootEngine(self.engine)
@@ -184,7 +230,10 @@ function SK.Gargul:ApplyRemote(engine)
 end
 
 function SK.Gargul:Announce(live)
-	if self.engine ~= "skf" or not SK.Session:IsMasterLooter() or not live then
+	if self.engine == "gargul" or not live then
+		return
+	end
+	if not SK.Session or not SK.Session:IsOfficer() then
 		return
 	end
 	local GL = self:Api()
@@ -202,13 +251,18 @@ function SK.Gargul:Announce(live)
 	end
 	self:CaptureRanges()
 	local ok, started = pcall(function()
-		return GL.RollOff:announceStart(link, seconds, nil)
+		return GL.RollOff:announceStart(link, seconds, "")
 	end)
 	if not ok or started == false then
-		SK.Print("Gargul did not open its roll window.")
+		if not self.announced then
+			SK.Print("Gargul did not open its roll window.")
+		end
 		return
 	end
 	self.announced = true
+	if self.engine == "skf" then
+		self:HideRoller()
+	end
 end
 
 function SK.Gargul:Stop()
@@ -232,6 +286,7 @@ function SK.Gargul:Stop()
 end
 
 function SK.Gargul:Install()
+	self:WrapRollOff()
 	if hooked then
 		return
 	end
@@ -281,10 +336,7 @@ function SK.Gargul:Watch()
 	self:Install()
 	local master = SK.Session:IsMasterLooter()
 	if not lootIsMaster() then
-		if self.announced then
-			self:Stop()
-		end
-		if self.engine or self.asking then
+		if not self.announced and (self.engine or self.asking) then
 			self.engine = nil
 			self.asking = false
 			if SK.UI and SK.UI.HideGargulChoice then
@@ -318,8 +370,14 @@ end
 
 SK.Events:On("SK_SESSION", function(reason)
 	if reason == "start" or reason == "rolloff" then
-		if reason == "start" and SK.Session:IsMasterLooter() and SK.Gargul:Loaded() and SK.Gargul.engine ~= "gargul" and (SK.Gargul.asking or not SK.Gargul.engine) then
-			SK.Gargul:Choose("skf")
+		if SK.Gargul:Loaded() and SK.Gargul.engine ~= "gargul" then
+			if reason == "start" and SK.Session:IsMasterLooter() and (SK.Gargul.asking or not SK.Gargul.engine) then
+				SK.Gargul:Choose("skf")
+			elseif SK.Gargul.engine ~= "skf" then
+				SK.Gargul.engine = "skf"
+				SK.Gargul.asking = false
+				SK.Gargul:Broadcast()
+			end
 		end
 		local live = SK.Session:Live()
 		SK.Gargul:Announce(live)

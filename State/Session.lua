@@ -389,12 +389,75 @@ local function recentSameRoll(live, name, roll)
 	return false
 end
 
+function SK.Session:PlusCount(name)
+	local map = SK.Saved:Session().plus
+	if type(map) ~= "table" then
+		return 0
+	end
+	return map[string.lower(SK.ShortName(name or ""))] or 0
+end
+
+function SK.Session:PlusSuffix(name)
+	local count = self:PlusCount(name)
+	if count > 0 then
+		return " +" .. tostring(count)
+	end
+	return ""
+end
+
+function SK.Session:AddPlus(name)
+	if not self:PugInRaid() then
+		return
+	end
+	local key = string.lower(SK.ShortName(name or ""))
+	if key == "" then
+		return
+	end
+	local session = SK.Saved:Session()
+	if type(session.plus) ~= "table" then
+		session.plus = {}
+	end
+	session.plus[key] = (session.plus[key] or 0) + 1
+	if SK.Events then
+		SK.Events:Fire("SK_LIST_CHANGED", "plus")
+	end
+end
+
+function SK.Session:PugInRaid()
+	if not IsInRaid or not IsInRaid() then
+		return false
+	end
+	if not SK.Roster or not SK.Roster.RaidMembers then
+		return false
+	end
+	local members = SK.Roster:RaidMembers()
+	local present = {}
+	for i = 1, #members do
+		present[string.lower(SK.ShortName(members[i].name))] = true
+	end
+	local list = SK.Saved:List()
+	for i = 1, #list do
+		local row = list[i]
+		if (row.pug or row.status == "Pug/fill") and present[string.lower(row.name)] then
+			return true
+		end
+	end
+	return false
+end
+
+function SK.Session:Contest()
+	if not self:PugInRaid() then
+		return nil
+	end
+	return { active = true, plus = SK.Saved:Session().plus }
+end
+
 function SK.Session:Decision()
 	local live = self:Live()
 	if not live then
 		return nil
 	end
-	return SK.Rules.Priority.Decide(live.responses, live.seeding, live.state == "rolloff" and live.rolloff or nil)
+	return SK.Rules.Priority.Decide(live.responses, live.seeding, live.state == "rolloff" and live.rolloff or nil, self:Contest())
 end
 
 function SK.Session:ChoicesFor(name)
@@ -450,6 +513,14 @@ function SK.Session:Respond(name, choice, roll, source)
 			return
 		end
 		roll = math.floor(roll)
+	elseif choice == "Bid" then
+		roll = tonumber(roll)
+		if roll then
+			if roll < 1 or roll > 100 then
+				return
+			end
+			roll = math.floor(roll)
+		end
 	else
 		roll = nil
 	end
@@ -485,7 +556,29 @@ function SK.Session:Respond(name, choice, roll, source)
 	if recentSameRoll(live, record.name, record.roll) then
 		return
 	end
-	if firstResponse(live, record.name) then
+	local prior = firstResponse(live, record.name)
+	if prior then
+		if choice == "MS" and prior.choice == "Bid" and not prior.roll then
+			prior.roll = record.roll
+			prior.at = record.at
+			changed("response")
+			return
+		end
+		if choice == "Bid" and prior.choice ~= "Duplicate" then
+			if prior.choice ~= "Bid" or (not prior.roll and record.roll) then
+				prior.choice = "Bid"
+				if record.roll then
+					prior.roll = record.roll
+				end
+				prior.position = record.position
+				prior.unseeded = record.unseeded
+				prior.pug = record.pug
+				prior.source = record.source
+				prior.at = record.at
+				changed("response")
+			end
+			return
+		end
 		if choice ~= "MS" and choice ~= "OS" then
 			return
 		end
@@ -578,7 +671,7 @@ function SK.Session:Start()
 	db().selected = nil
 	local listLabel = item.listName or "list"
 	db().note = SK.Item.Display(item) .. " is live on " .. listLabel .. ". " .. duration .. " seconds."
-	say(shownItem(item) .. " — " .. listLabel .. " — bid, or MS /roll 100, or OS /roll 99. " .. duration .. " seconds.")
+	say(shownItem(item) .. " — " .. listLabel .. " — Type 'Bid', or MS /roll 100, OS /roll 99. " .. duration .. " seconds.")
 	changed("start")
 	if SK.UI and SK.UI.ShowRollPopup then
 		SK.UI.ShowRollPopup("start")
@@ -608,7 +701,23 @@ function SK.Session:Chosen()
 	return winnerRecord(live, decision), decision
 end
 
+local function copyResponses(list)
+	local out = {}
+	for i = 1, #list do
+		local row = list[i]
+		local copy = {}
+		for key, value in pairs(row) do
+			copy[key] = value
+		end
+		table.insert(out, copy)
+	end
+	return out
+end
+
 local function beginRolloff(live, tie)
+	if tie.side and not live.sideBase then
+		live.sideBase = copyResponses(live.responses)
+	end
 	live.rolloffTries = (live.rolloffTries or 0) + 1
 	if live.rolloffTries > 3 then
 		live.state = "closed"
@@ -626,7 +735,7 @@ local function beginRolloff(live, tie)
 		table.insert(label, person.name)
 		removeResponses(live, person.name)
 	end
-	live.rolloff = { tier = tie.tier, names = names }
+	live.rolloff = { tier = tie.tier, names = names, side = tie.side and true or false }
 	live.state = "rolloff"
 	live.override = nil
 	live.said = {}
@@ -641,17 +750,42 @@ function SK.Session:CloseTimer()
 	if not live or (live.state ~= "open" and live.state ~= "rolloff") then
 		return
 	end
-	local decision = SK.Rules.Priority.Decide(live.responses, live.seeding, live.state == "rolloff" and live.rolloff or nil)
+	local decision = self:Decision()
 	if decision.tie then
+		if live.rolloff and live.rolloff.side then
+			decision.tie.side = true
+		end
 		beginRolloff(live, decision.tie)
 		return
+	end
+	if live.rolloff and live.rolloff.side and decision.winner and not decision.winner.pug and live.sideBase then
+		local core = {}
+		for i = 1, #live.sideBase do
+			if not live.sideBase[i].pug then
+				table.insert(core, live.sideBase[i])
+			end
+		end
+		decision = SK.Rules.Priority.Decide(core, live.seeding, nil, nil)
+		if decision.tie then
+			beginRolloff(live, decision.tie)
+			return
+		end
 	end
 	live.state = "closed"
 	local winner = decision.winner
 	if winner then
 		local roll = winner.roll and tostring(winner.roll) or ""
 		db().note = winner.name .. " wins by " .. winner.choice .. (roll ~= "" and (" " .. roll) or "") .. ". Award, disenchant, or cancel."
-		say("Winner: " .. winner.name .. ", " .. winner.choice .. (roll ~= "" and (", roll " .. roll) or "") .. ".")
+		if winner.choice == "Bid" then
+			local where = winner.position or (winner.unseeded and "unseeded")
+			if where then
+				say("Winner: " .. winner.name .. ", Bid position " .. where .. ".")
+			else
+				say("Winner: " .. winner.name .. ", Bid.")
+			end
+		else
+			say("Winner: " .. winner.name .. ", " .. winner.choice .. (roll ~= "" and (", roll " .. roll) or "") .. ".")
+		end
 	else
 		db().note = live.name .. " is closed. No response. Disenchant or cancel."
 		say(live.name .. " closed with no winner.")
@@ -853,6 +987,7 @@ function SK.Session:Award()
 		detail = SK.Item.Display(live),
 		item = live.link,
 		roll = winner.roll,
+		bidPosition = winner.choice == "Bid" and (winner.unseeded and "unseeded" or (winner.position and tostring(winner.position) or "unseeded")) or nil,
 		positionBefore = before,
 		positionAfter = after,
 		officer = UnitName("player"),
@@ -862,6 +997,7 @@ function SK.Session:Award()
 		listId = live.listId,
 		listName = live.listName,
 	}
+	self:AddPlus(winner.name)
 	local given = SK.Trade and SK.Trade.GiveMasterLoot and SK.Trade:GiveMasterLoot(live, winner.name)
 	if given then
 		event.delivered = true
@@ -1057,20 +1193,33 @@ function SK.Session:LockRaid()
 			end
 		end
 	end
+	local session = SK.Saved:Session()
+	if not session.raidId or session.raidId == "" then
+		session.raidId = tostring(time())
+	end
+	local teamId = SK.Teams and SK.Teams:TeamId() or ""
+	local dropped = session.nocallRaid
+	local already = type(dropped) == "table" and dropped[teamId] == session.raidId
 	local notes
 	if SK.Teams then
 		SK.Teams:Materialize()
+	end
+	if already then
+		notes = {}
+	elseif SK.Teams then
 		notes = SK.Teams:DropNoCallAll()
 	else
 		notes = SK.Rules.Reconcile.DropNoCalls(list)
 	end
+	if not already then
+		if type(session.nocallRaid) ~= "table" then
+			session.nocallRaid = {}
+		end
+		session.nocallRaid[teamId] = session.raidId
+	end
 	list = SK.Saved:List()
-	local session = SK.Saved:Session()
 	session.locked = true
 	session.lockedTeam = SK.Teams and SK.Teams:TeamId() or nil
-	if not session.raidId or session.raidId == "" then
-		session.raidId = tostring(time())
-	end
 	session.raidOfficer = UnitName("player")
 	session.raidAtLock = {}
 	for key in pairs(raid) do
@@ -1291,6 +1440,63 @@ local function lootSlotIsItem(slot)
 	return kind == 1
 end
 
+local function slotQuality(link, info)
+	local quality = info and info.quality
+	if quality then
+		return quality
+	end
+	if type(link) ~= "string" then
+		return nil
+	end
+	local hex = string.match(link, "|c(%x%x%x%x%x%x%x%x)")
+	return hex and ({
+		ff9d9d9d = 0,
+		ffffffff = 1,
+		ff1eff00 = 2,
+		ff0070dd = 3,
+		ffa335ee = 4,
+		ffff8000 = 5,
+	})[string.lower(hex)]
+end
+
+local function lootingBoss()
+	if not UnitExists or not UnitExists("target") then
+		return false
+	end
+	if UnitIsDead and not UnitIsDead("target") then
+		return false
+	end
+	local kind = UnitClassification and UnitClassification("target")
+	if kind == "worldboss" then
+		return true
+	end
+	local level = UnitLevel and UnitLevel("target")
+	return level == -1
+end
+
+function SK.Session:AnnounceBossLoot()
+	if not self:IsOfficer() or not IsInRaid or not IsInRaid() then
+		return
+	end
+	local settings = SK.Settings:Get()
+	if not settings.announceBoss or not lootingBoss() then
+		return
+	end
+	local floor = settings.autoQuality or 2
+	local slots = GetNumLootItems and GetNumLootItems() or 0
+	for slot = 1, slots do
+		if lootSlotIsItem(slot) then
+			local link = GetLootSlotLink(slot)
+			local info = SK.Item.Describe(link)
+			local quality = slotQuality(link, info)
+			local shown = info.link or link
+			if quality and quality >= floor and type(shown) == "string" and shown ~= "" then
+				SK.Chat:SayRaid(shown)
+			end
+		end
+	end
+end
+
 function SK.Session:AutoLoot()
 	if not self:IsOfficer() or not masterLootOn() then
 		return
@@ -1310,19 +1516,7 @@ function SK.Session:AutoLoot()
 		if lootSlotIsItem(slot) then
 			local link = GetLootSlotLink(slot)
 			local info = SK.Item.Describe(link)
-			local quality = info.quality
-			if not quality and type(link) == "string" then
-				local hex = string.match(link, "|c(%x%x%x%x%x%x%x%x)")
-				local fromColor = hex and ({
-					ff9d9d9d = 0,
-					ffffffff = 1,
-					ff1eff00 = 2,
-					ff0070dd = 3,
-					ffa335ee = 4,
-					ffff8000 = 5,
-				})[string.lower(hex)]
-				quality = fromColor
-			end
+			local quality = slotQuality(link, info)
 			if quality and quality >= floor then
 				local id = "i" .. tostring(time()) .. tostring(#waiting + 1) .. tostring(slot)
 				local entry = {
@@ -1354,6 +1548,7 @@ SK.Events:Register("LOOT_OPENED", function()
 	end
 	autoOpen = true
 	SK.Session:AutoLoot()
+	SK.Session:AnnounceBossLoot()
 end)
 SK.Events:Register("LOOT_CLOSED", function()
 	autoOpen = false
