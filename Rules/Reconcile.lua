@@ -138,8 +138,5 @@ function SK.Rules.Reconcile.Choices(rolls, row, seeding)
 	if rolls ~= "Bid, MS, OS" then
 		return { "MS", "OS", "Pass" }
 	end
-	if seeding and row and not row.pug and not row.position then
-		return { "MS", "OS", "Pass" }
-	end
 	return { "Bid", "MS", "OS", "Pass" }
 end

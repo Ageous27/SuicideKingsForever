@@ -43,6 +43,30 @@ local function bidMessage(text)
 	return text == "bid" or string.sub(text, 1, 4) == "bid " or text == "bid."
 end
 
+local announcedBid = {}
+
+local function noteBid(name)
+	name = string.lower(SK.ShortName(name or ""))
+	if name == "" then
+		return
+	end
+	announcedBid[name] = time()
+end
+
+local function bidNoted(name)
+	local at = announcedBid[string.lower(SK.ShortName(name or ""))]
+	return at and (time() - at) <= 5
+end
+
+function SK.Chat:AnnounceBid(name, position)
+	name = SK.ShortName(name)
+	if name == "" then
+		return
+	end
+	noteBid(name)
+	self:Say(name .. " Bids position " .. tostring(position))
+end
+
 local function onTalk(text, sender)
 	if not SK.Session:IsOfficer() then
 		return
@@ -53,6 +77,14 @@ local function onTalk(text, sender)
 		return
 	end
 	if type(text) ~= "string" or sender == "" then
+		return
+	end
+	local where = string.match(text, "Bids position%s+(%S+)") or string.match(text, "bids position%s+(%S+)")
+	if where then
+		noteBid(sender)
+		if string.lower(where) ~= "unseeded" then
+			SK.Session:Respond(sender, "Bid", nil, "chat")
+		end
 		return
 	end
 	if bidMessage(text) then
@@ -163,6 +195,9 @@ local function recordRoll(name, roll, low, high)
 		return
 	end
 	local choice = rollChoice(low, high)
+	if bidNoted(name) and high == 100 then
+		choice = "Bid"
+	end
 	if not choice then
 		return
 	end

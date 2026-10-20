@@ -229,30 +229,70 @@ local function alreadyPlacing(id)
 	return false
 end
 
-local function onTradeShow()
-	if not SK.Session or not SK.Session:IsOfficer() then
+local tradeOpen = false
+
+local function owedTo(who, pending)
+	local exact = {}
+	for i = 1, #pending do
+		if sameName(pending[i].winner, who) then
+			table.insert(exact, pending[i])
+		end
+	end
+	if #exact > 0 or who == "" or not SK.Teams or not SK.Teams.Row then
+		return exact
+	end
+	local row = SK.Teams:Row(nil, who)
+	if not row then
+		return exact
+	end
+	for i = 1, #pending do
+		if sameName(pending[i].winner, row.name) then
+			table.insert(exact, pending[i])
+		end
+	end
+	return exact
+end
+
+local function placeEntry(entry)
+	if findInTrade(entry) then
+		return true
+	end
+	local bag, slot, count = findInBags(entry)
+	if not bag then
+		return false, "bags"
+	end
+	local tradeSlot = emptyTradeSlot()
+	if not tradeSlot then
+		return false, "full"
+	end
+	if placeInTrade(bag, slot, tradeSlot) then
+		return true, bag, slot, count
+	end
+	return false, "place"
+end
+
+local retry = CreateFrame("Frame")
+retry:Hide()
+
+local function attemptTrade(finalTry)
+	if not tradeOpen or not SK.Session or not SK.Session:IsOfficer() then
+		retry:Hide()
+		return
+	end
+	local who = partnerName()
+	if who == "" then
+		if finalTry then
+			note("Trade target is not available.")
+			retry:Hide()
+		end
+		return
+	end
+	local owed = owedTo(who, SK.Session:NeedsTrade())
+	if #owed == 0 then
+		retry:Hide()
 		return
 	end
 	busy = true
-	local who = partnerName()
-	if who == "" then
-		note("Trade target is not available.")
-		return
-	end
-	if CheckInteractDistance and not CheckInteractDistance("npc", 2) then
-		note(who .. " is out of range. The award stays in Needs Trade.")
-		return
-	end
-	local pending = SK.Session:NeedsTrade()
-	local owed = {}
-	for i = 1, #pending do
-		if sameName(pending[i].winner, who) then
-			table.insert(owed, pending[i])
-		end
-	end
-	if #owed == 0 then
-		return
-	end
 	placing = placing or {}
 	local problems = {}
 	local placedNames = {}
@@ -260,40 +300,61 @@ local function onTradeShow()
 		local entry = owed[i]
 		if not alreadyPlacing(entry.id) then
 			local label = SK.Item.Display(entry)
-			if findInTrade(entry) then
-				table.insert(placing, { id = entry.id, inTrade = true, itemID = entryID(entry) })
-				table.insert(placedNames, label)
-			else
-				local bag, slot, count = findInBags(entry)
-				if not bag then
-					table.insert(problems, label .. " is not in your bags.")
+			local ok, bag, slot, count = placeEntry(entry)
+			if ok then
+				local record = { id = entry.id, itemID = entryID(entry) }
+				if type(bag) == "number" then
+					record.bag = bag
+					record.slot = slot
+					record.count = count
 				else
-					local tradeSlot = emptyTradeSlot()
-					if not tradeSlot then
-						table.insert(problems, "The trade window is full.")
-					elseif placeInTrade(bag, slot, tradeSlot) then
-						table.insert(placing, {
-							id = entry.id,
-							bag = bag,
-							slot = slot,
-							count = count,
-							itemID = entryID(entry),
-						})
-						table.insert(placedNames, label)
-					else
-						table.insert(problems, "Could not place " .. label .. " in the trade window.")
-					end
+					record.inTrade = true
 				end
+				table.insert(placing, record)
+				table.insert(placedNames, label)
+			elseif bag == "bags" then
+				table.insert(problems, label .. " is not in your bags.")
+			elseif bag == "full" then
+				table.insert(problems, "The trade window is full.")
+			else
+				table.insert(problems, "Could not place " .. label .. " in the trade window.")
 			end
 		end
 	end
-	if #problems > 0 then
-		note(table.concat(problems, " ") .. " The award stays in Needs Trade.")
-	elseif #placedNames == 1 then
+	if #placedNames == 1 then
 		note(placedNames[1] .. " is in the trade window.")
 	elseif #placedNames > 1 then
 		note(#placedNames .. " items are in the trade window.")
 	end
+	if #placedNames > 0 then
+		retry:Hide()
+		return
+	end
+	if finalTry and #problems > 0 then
+		note(table.concat(problems, " ") .. " The award stays in Needs Trade.")
+		retry:Hide()
+	end
+end
+
+retry:SetScript("OnUpdate", function(self, elapsed)
+	self.wait = (self.wait or 0) + (elapsed or 0)
+	if self.wait < 0.2 then
+		return
+	end
+	self.wait = 0
+	self.tries = (self.tries or 0) + 1
+	attemptTrade(self.tries >= 8)
+end)
+
+local function onTradeShow()
+	tradeOpen = true
+	placing = {}
+	bothAccepted = false
+	busy = false
+	retry.tries = 0
+	retry.wait = 0
+	retry:Show()
+	attemptTrade(false)
 end
 
 local function countAt(row)
@@ -446,7 +507,11 @@ end
 
 SK.Events:Register("TRADE_SHOW", onTradeShow)
 SK.Events:Register("TRADE_ACCEPT_UPDATE", onAccept)
-SK.Events:Register("TRADE_CLOSED", finishTrade)
+SK.Events:Register("TRADE_CLOSED", function()
+	tradeOpen = false
+	retry:Hide()
+	finishTrade()
+end)
 SK.Events:Register("TRADE_REQUEST_CANCEL", function()
 	bothAccepted = false
 end)

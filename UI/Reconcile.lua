@@ -544,8 +544,14 @@ paint = function()
 	local list = SK.Saved:List()
 	local seedingList = fullyUnseeded(list)
 	local onList = {}
+	local firstCount = {}
 	for i = 1, #list do
-		onList[string.lower(list[i].name)] = true
+		local name = list[i].name or ""
+		onList[string.lower(name)] = true
+		local first = string.lower(string.match(name, "^(%S+)") or "")
+		if first ~= "" then
+			firstCount[first] = (firstCount[first] or 0) + 1
+		end
 	end
 	local line = 1
 	for i = 1, #list do
@@ -604,7 +610,10 @@ paint = function()
 	end
 	local guests = {}
 	for _, info in pairs(raid) do
-		if not onList[string.lower(info.name)] then
+		local name = info.name or ""
+		local first = string.lower(string.match(name, "^(%S+)") or "")
+		local samePerson = first ~= "" and firstCount[first] == 1
+		if not onList[string.lower(name)] and not samePerson then
 			table.insert(guests, info)
 		end
 	end

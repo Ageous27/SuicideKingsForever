@@ -57,20 +57,15 @@ addRow:SetHeight(26)
 addRow:SetPoint("BOTTOMLEFT", left, "BOTTOMLEFT", 0, 0)
 addRow:SetPoint("BOTTOMRIGHT", left, "BOTTOMRIGHT", 0, 0)
 
-local addBtn = CreateFrame("Button", nil, addRow, "UIPanelButtonTemplate")
-addBtn:SetSize(64, 22)
-addBtn:SetPoint("RIGHT", addRow, "RIGHT", 0, 0)
-addBtn:SetText("Add")
-
 local linkBox = CreateFrame("EditBox", nil, addRow, "InputBoxTemplate")
 linkBox:SetHeight(20)
 linkBox:SetPoint("LEFT", addRow, "LEFT", 8, 0)
-linkBox:SetPoint("RIGHT", addBtn, "LEFT", -8, 0)
+linkBox:SetPoint("RIGHT", addRow, "RIGHT", -8, 0)
 linkBox:SetAutoFocus(false)
 linkBox:SetMaxLetters(400)
 local linkHint = linkBox:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 linkHint:SetPoint("LEFT", 4, 0)
-linkHint:SetText("Paste item link")
+linkHint:SetText("Shift-Click item link")
 linkBox:SetScript("OnTextChanged", function(self)
 	if self:GetText() == "" then
 		linkHint:Show()
@@ -345,7 +340,6 @@ local function queueLink()
 	end
 end
 
-addBtn:SetScript("OnClick", queueLink)
 linkBox:SetScript("OnEnterPressed", function(self)
 	queueLink()
 	self:ClearFocus()
@@ -500,7 +494,6 @@ end)
 
 function refresh()
 	local officer = SK.Session:IsOfficer()
-	addBtn:SetEnabled(officer)
 	linkBox:SetEnabled(officer)
 	local waiting = SK.Session:Waiting()
 	local selected = SK.Saved:Session().selected

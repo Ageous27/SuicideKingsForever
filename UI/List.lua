@@ -640,7 +640,14 @@ continueBtn:SetScript("OnClick", function()
 	refresh()
 end)
 
+local matchingRaid = false
+
 function refresh()
+	if not matchingRaid and SK.Session and SK.Session.DetectRaid then
+		matchingRaid = true
+		SK.Session:DetectRaid()
+		matchingRaid = false
+	end
 	local officer = SK.Session:IsOfficer()
 	local teamId = SK.Teams and SK.Teams:TeamId()
 	local emptyTeam = not teamHasCore()

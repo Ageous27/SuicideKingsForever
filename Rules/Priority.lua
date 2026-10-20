@@ -26,7 +26,7 @@ function SK.Rules.Priority.Choices(row, seeding, locked)
 		return {}
 	end
 	if seeding and not row.position then
-		return { "MS", "OS", "Pass" }
+		return { "Bid", "MS", "OS", "Pass" }
 	end
 	return { "Bid", "MS", "OS", "Pass" }
 end
@@ -36,6 +36,16 @@ function SK.Rules.Priority.Allows(choices, choice)
 end
 
 local function byPosition(a, b)
+	return (a.position or 9999) < (b.position or 9999)
+end
+
+local function byBid(a, b)
+	if a.unseeded ~= b.unseeded then
+		return a.unseeded and true or false
+	end
+	if a.unseeded and b.unseeded then
+		return (a.roll or 0) > (b.roll or 0)
+	end
 	return (a.position or 9999) < (b.position or 9999)
 end
 
@@ -87,6 +97,7 @@ function SK.Rules.Priority.Decide(responses, seeding, rolloff)
 	local ms = {}
 	local os = {}
 	local passes = {}
+	local unseededBids = {}
 	local unseededMs = {}
 	local unseededOs = {}
 	local duplicates = {}
@@ -110,8 +121,11 @@ function SK.Rules.Priority.Decide(responses, seeding, rolloff)
 			end
 			if choice == "Pass" then
 				table.insert(passes, row)
-			elseif choice == "Bid" and row.position then
+			elseif choice == "Bid" and (row.position or row.unseeded) then
 				table.insert(bids, row)
+				if row.unseeded then
+					table.insert(unseededBids, row)
+				end
 			elseif choice == "MS" then
 				table.insert(ms, row)
 				if row.unseeded then
@@ -125,59 +139,43 @@ function SK.Rules.Priority.Decide(responses, seeding, rolloff)
 			end
 		end
 	end
-	table.sort(bids, byPosition)
+	table.sort(bids, byBid)
 	table.sort(ms, byRoll)
 	table.sort(os, byRoll)
 
 	local winner
 	local tie
 	local ordered = {}
-	if seeding and not rolloff and (#unseededMs + #unseededOs) > 0 then
-		local pool = #unseededMs > 0 and unseededMs or unseededOs
-		local tier = #unseededMs > 0 and "MS" or "OS"
+	if seeding and not rolloff and (#unseededBids + #unseededMs + #unseededOs) > 0 then
+		local pool = unseededMs
+		local tier = "MS"
+		if #unseededBids > 0 then
+			pool = unseededBids
+			tier = "Bid"
+		elseif #unseededOs > 0 and #unseededMs == 0 then
+			pool = unseededOs
+			tier = "OS"
+		end
 		winner, tie = pickRolls(pool)
 		if tie then
 			tie = { tier = tier, names = tie }
 		end
-		appendAll(ordered, unseededMs)
-		appendAll(ordered, unseededOs)
-		appendAll(ordered, bids)
-		for i = 1, #ms do
-			if not ms[i].unseeded then
-				table.insert(ordered, ms[i])
-			end
-		end
-		for i = 1, #os do
-			if not os[i].unseeded then
-				table.insert(ordered, os[i])
-			end
-		end
 	elseif #bids > 0 then
 		winner = bids[1]
-		appendAll(ordered, bids)
-		appendAll(ordered, ms)
-		appendAll(ordered, os)
 	elseif #ms > 0 then
 		winner, tie = pickRolls(ms)
 		if tie then
 			tie = { tier = "MS", names = tie }
 		end
-		appendAll(ordered, bids)
-		appendAll(ordered, ms)
-		appendAll(ordered, os)
 	elseif #os > 0 then
 		winner, tie = pickRolls(os)
 		if tie then
 			tie = { tier = "OS", names = tie }
 		end
-		appendAll(ordered, bids)
-		appendAll(ordered, ms)
-		appendAll(ordered, os)
-	else
-		appendAll(ordered, bids)
-		appendAll(ordered, ms)
-		appendAll(ordered, os)
 	end
+	appendAll(ordered, bids)
+	appendAll(ordered, ms)
+	appendAll(ordered, os)
 	appendAll(ordered, passes)
 	appendAll(ordered, duplicates)
 	return { ordered = ordered, winner = winner, tie = tie }

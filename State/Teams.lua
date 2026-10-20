@@ -410,7 +410,99 @@ local function firstWord(name)
 	return string.lower(string.match(name, "^(%S+)") or name)
 end
 
-local function noteRoster(name, detail)
+local noteRoster
+
+local function compactList(list)
+	local placed = {}
+	local unseeded = 0
+	for key, on in pairs(list.members or {}) do
+		if on then
+			if list.pos[key] then
+				table.insert(placed, key)
+			else
+				unseeded = unseeded + 1
+			end
+		end
+	end
+	table.sort(placed, function(a, b)
+		return (list.pos[a] or 0) < (list.pos[b] or 0)
+	end)
+	for i = 1, #placed do
+		list.pos[placed[i]] = unseeded + i
+	end
+end
+
+local function mergeShortIntoFull(team, dropKey, keepKey)
+	local drop = team.people[dropKey]
+	local keep = team.people[keepKey]
+	if not drop or not keep then
+		return false
+	end
+	local touched = {}
+	for i = 1, #team.listOrder do
+		local list = team.lists[team.listOrder[i]]
+		if list and list.members[dropKey] then
+			list.members[keepKey] = true
+			local dropPos = list.pos[dropKey]
+			local keepPos = list.pos[keepKey]
+			if dropPos and (not keepPos or dropPos < keepPos) then
+				list.pos[keepKey] = dropPos
+			end
+			list.members[dropKey] = nil
+			list.pos[dropKey] = nil
+			touched[list] = true
+		end
+	end
+	if (not keep.class or keep.class == "") and drop.class and drop.class ~= "" then
+		keep.class = drop.class
+	end
+	if keep.pug and not drop.pug then
+		keep.pug = false
+		keep.status = drop.status or keep.status
+		keep.rolls = drop.rolls or keep.rolls
+		keep.hold = drop.hold and true or false
+	end
+	team.people[dropKey] = nil
+	for list in pairs(touched) do
+		compactList(list)
+	end
+	return true
+end
+
+local function collapseShortNames(team, raid)
+	local byFirst = {}
+	for i = 1, #raid do
+		local first = firstWord(raid[i].name)
+		byFirst[first] = byFirst[first] or {}
+		table.insert(byFirst[first], raid[i])
+	end
+	local shorts = {}
+	for key, person in pairs(team.people) do
+		if person.name and person.name ~= "" and not string.find(person.name, " ", 1, true) then
+			table.insert(shorts, key)
+		end
+	end
+	local merged = false
+	for i = 1, #shorts do
+		local dropKey = shorts[i]
+		local person = team.people[dropKey]
+		if person then
+			local matches = byFirst[firstWord(person.name)]
+			if matches and #matches == 1 then
+				local keepKey = string.lower(matches[1].name)
+				if keepKey ~= dropKey and team.people[keepKey] then
+					if mergeShortIntoFull(team, dropKey, keepKey) then
+						merged = true
+						noteRoster(team.people[keepKey].name, "merged duplicate name")
+					end
+				end
+			end
+		end
+	end
+	return merged
+end
+
+noteRoster = function(name, detail)
 	if not SK.History then
 		return
 	end
@@ -534,6 +626,9 @@ function SK.Teams:MatchRaid()
 				noteRoster(member.name, "pug / fill from raid")
 			end
 		end
+	end
+	if collapseShortNames(team, raid) then
+		changed = true
 	end
 	return filled, changed
 end

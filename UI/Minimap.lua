@@ -256,6 +256,27 @@ button:SetScript("OnClick", function(self, which)
 		return
 	end
 	if which == "RightButton" then
+		if IsAltKeyDown() then
+			hideMenu()
+			local link
+			if GetCursorInfo then
+				local kind, _, cursorLink = GetCursorInfo()
+				if kind == "item" and type(cursorLink) == "string" then
+					link = cursorLink
+				end
+			end
+			if link and SK.Session and SK.Session.Queue then
+				SK.Session:Queue(link)
+				if ClearCursor then
+					ClearCursor()
+				end
+			end
+			if SK.UI and SK.UI.Open then
+				SK.UI:Open("rolls")
+			end
+			parkSoon()
+			return
+		end
 		if menu:IsShown() then
 			hideMenu()
 		else
@@ -297,6 +318,7 @@ button:SetScript("OnEnter", function(self)
 	GameTooltip:SetText("Suicide Kings Forever")
 	GameTooltip:AddLine("Left-click: List", 1, 1, 1)
 	GameTooltip:AddLine("Right-click: windows", 1, 1, 1)
+	GameTooltip:AddLine("Alt-Right click: Add Item", 1, 1, 1)
 	GameTooltip:AddLine("Drag to move", 0.8, 0.8, 0.8)
 	GameTooltip:Show()
 end)

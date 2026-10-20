@@ -139,6 +139,24 @@ local function sendChoice(choice)
 		return
 	end
 	local name = SK.ShortName(UnitName("player"))
+	if choice == "Bid" then
+		local live = SK.Session:Live()
+		local row
+		if live and live.listId and SK.Teams and SK.Teams.Row then
+			row = SK.Teams:Row(live.listId, name)
+		else
+			row = SK.List:Find(name)
+		end
+		local unseeded = row and not row.pug and not row.position
+		local where = unseeded and "unseeded" or (row and row.position)
+		if where and SK.Chat and SK.Chat.AnnounceBid then
+			SK.Chat:AnnounceBid(row and row.name or name, where)
+		end
+		if unseeded and SK.Chat and SK.Chat.RollFor then
+			SK.Chat:RollFor("Bid")
+			return
+		end
+	end
 	if SK.Session:IsOfficer() then
 		SK.Session:Respond(name, choice, nil, "popup")
 	elseif SK.Sync and SK.Sync.SendResponse then

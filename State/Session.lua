@@ -469,6 +469,19 @@ function SK.Session:Respond(name, choice, roll, source)
 		source = source or "popup",
 		at = time(),
 	}
+	if choice == "Bid" and record.roll then
+		local key = string.lower(record.name)
+		local now = time()
+		for i = 1, #live.responses do
+			local prior = live.responses[i]
+			if string.lower(prior.name) == key and prior.roll == record.roll and not prior.duplicate and (now - (prior.at or 0)) <= 3 and (prior.choice == "MS" or prior.choice == "OS") then
+				prior.choice = "Bid"
+				prior.source = source or prior.source
+				changed("response")
+				return
+			end
+		end
+	end
 	if recentSameRoll(live, record.name, record.roll) then
 		return
 	end
