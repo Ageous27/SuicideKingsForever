@@ -1,7 +1,7 @@
 ## Interface: 16001
 ## Title: Suicide Kings Forever
 ## Notes: Suicide Kings loot for WoW Forever
-## Version: 0.3.6
+## Version: 0.4.0
 ## SavedVariables: SKDB
 ## Author: Suicide Kings Forever
 

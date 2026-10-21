@@ -126,7 +126,7 @@ function SK.Rules.Priority.Decide(responses, seeding, rolloff, contest)
 				if row.unseeded then
 					table.insert(unseededBids, row)
 				end
-			elseif choice == "MS" then
+			elseif choice == "MS" or choice == "Roll" then
 				table.insert(ms, row)
 				if row.unseeded then
 					table.insert(unseededMs, row)
@@ -274,7 +274,25 @@ function SK.Rules.Priority.Decide(responses, seeding, rolloff, contest)
 			tie = { tier = tier, names = tie }
 		end
 	elseif #bids > 0 then
-		winner = bids[1]
+		local topRoll = bids[1].roll or 0
+		local tiedBids = nil
+		if bids[1].unseeded and not bids[1].position then
+			tiedBids = {}
+			for i = 1, #bids do
+				local row = bids[i]
+				if row.unseeded and not row.position and (row.roll or 0) == topRoll then
+					table.insert(tiedBids, row)
+				end
+			end
+			if #tiedBids < 2 then
+				tiedBids = nil
+			end
+		end
+		if tiedBids then
+			tie = { tier = "Bid", names = tiedBids }
+		else
+			winner = bids[1]
+		end
 	elseif #ms > 0 then
 		winner, tie = pickRolls(ms)
 		if tie then

@@ -633,6 +633,27 @@ function SK.Teams:MatchRaid()
 	return filled, changed
 end
 
+function SK.Teams:PullRaidIdentity()
+	if not IsInRaid or not IsInRaid() then
+		return
+	end
+	if not SK.Roster or not SK.Roster.RaidMembers then
+		return
+	end
+	local team = self:Team()
+	if not team or type(team.people) ~= "table" then
+		return
+	end
+	local raid = SK.Roster:RaidMembers()
+	for i = 1, #raid do
+		local member = raid[i]
+		local person = team.people[string.lower(member.name)]
+		if person and member.class and member.class ~= "" and person.class ~= member.class then
+			person.class = member.class
+		end
+	end
+end
+
 function SK.Teams:FillFromRaid()
 	return self:MatchRaid()
 end

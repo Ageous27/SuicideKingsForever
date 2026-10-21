@@ -192,6 +192,13 @@ local function recordRoll(name, roll, low, high)
 		return
 	end
 	local choice = rollChoice(low, high)
+	local live = SK.Session:Live()
+	if choice == "MS" and live and live.state == "rolloff" and live.rolloff and live.rolloff.tier == "Roll" then
+		local key = string.lower(SK.ShortName(name))
+		if live.rolloff.names and live.rolloff.names[key] then
+			choice = "Roll"
+		end
+	end
 	if not choice then
 		return
 	end

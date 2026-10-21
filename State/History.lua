@@ -52,6 +52,12 @@ function SK.History:Outcome(event)
 		end
 		return line
 	end
+	if action == "Roll" then
+		if event.roll then
+			return "Roll " .. tostring(event.roll)
+		end
+		return "Roll"
+	end
 	if action == "MS" or action == "OS" then
 		if event.roll then
 			return action .. " roll " .. tostring(event.roll)

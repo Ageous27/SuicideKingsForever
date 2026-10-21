@@ -97,7 +97,7 @@ footnote:SetPoint("BOTTOM", 0, 16)
 footnote:SetText("Pick once. This window closes after your choice.")
 
 local buttons = {}
-local order = { "Bid", "MS", "OS", "Pass" }
+local order = { "Bid", "Roll", "MS", "OS", "Pass" }
 local current = nil
 local picked = nil
 
@@ -132,7 +132,7 @@ local function sendChoice(choice)
 	current = choice
 	lockButtons()
 	closeAfterChoice()
-	if choice == "MS" or choice == "OS" then
+	if choice == "MS" or choice == "OS" or choice == "Roll" then
 		if SK.Chat and SK.Chat.RollFor then
 			SK.Chat:RollFor(choice)
 		end
@@ -152,7 +152,7 @@ local function sendChoice(choice)
 		if where and SK.Chat and SK.Chat.AnnounceBid then
 			SK.Chat:AnnounceBid(row and row.name or name, where)
 		end
-		if SK.Session:PugInRaid() and SK.Chat and SK.Chat.RollFor then
+		if (unseeded or SK.Session:PugInRaid()) and SK.Chat and SK.Chat.RollFor then
 			SK.Chat:RollFor("Bid")
 			return
 		end

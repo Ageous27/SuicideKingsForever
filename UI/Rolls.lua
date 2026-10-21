@@ -710,7 +710,7 @@ function refresh()
 			local button = responseButton(i)
 			local listRow = SK.List:Find(row.name)
 			local duplicate = row.duplicate or row.choice == "Duplicate"
-			local mustRoll = row.choice == "Bid" and not row.roll and not duplicate and SK.Session:PugInRaid()
+			local mustRoll = row.choice == "Bid" and not row.roll and not duplicate and (row.unseeded or SK.Session:PugInRaid())
 			button.num:SetText(tostring(i))
 			button.name:SetText(row.name .. SK.Session:PlusSuffix(row.name))
 			if duplicate then

@@ -507,7 +507,7 @@ function SK.Session:Respond(name, choice, roll, source)
 		end
 		return
 	end
-	if choice == "MS" or choice == "OS" then
+	if choice == "MS" or choice == "OS" or choice == "Roll" then
 		roll = tonumber(roll)
 		if not roll or roll < 1 or roll > 100 then
 			return
@@ -579,7 +579,7 @@ function SK.Session:Respond(name, choice, roll, source)
 			end
 			return
 		end
-		if choice ~= "MS" and choice ~= "OS" then
+		if choice ~= "MS" and choice ~= "OS" and choice ~= "Roll" then
 			return
 		end
 		record.duplicate = true
@@ -735,13 +735,23 @@ local function beginRolloff(live, tie)
 		table.insert(label, person.name)
 		removeResponses(live, person.name)
 	end
-	live.rolloff = { tier = tie.tier, names = names, side = tie.side and true or false }
+	local tier = tie.tier
+	if tier == "Bid" then
+		tier = "Roll"
+	end
+	live.rolloff = { tier = tier, names = names, side = tie.side and true or false }
 	live.state = "rolloff"
 	live.override = nil
 	live.said = {}
 	live.endsAt = time() + (live.duration or 15)
-	db().note = "Roll-off: " .. table.concat(label, ", ") .. ". " .. tie.tier .. " only."
-	say("Roll-off " .. tie.tier .. ": " .. table.concat(label, ", ") .. ". " .. (live.duration or 15) .. " seconds.")
+	local who = table.concat(label, ", ")
+	if tier == "Roll" then
+		db().note = "Roll-off: " .. who .. ". /roll 100."
+		say("Roll-off: " .. who .. ". /roll 100. " .. (live.duration or 15) .. " seconds.")
+	else
+		db().note = "Roll-off: " .. who .. ". " .. tier .. " only."
+		say("Roll-off " .. tier .. ": " .. who .. ". " .. (live.duration or 15) .. " seconds.")
+	end
 	changed("rolloff")
 end
 
@@ -754,6 +764,9 @@ function SK.Session:CloseTimer()
 	if decision.tie then
 		if live.rolloff and live.rolloff.side then
 			decision.tie.side = true
+		end
+		if live.rolloff and live.rolloff.tier == "Roll" then
+			decision.tie.tier = "Roll"
 		end
 		beginRolloff(live, decision.tie)
 		return
@@ -783,6 +796,8 @@ function SK.Session:CloseTimer()
 			else
 				say("Winner: " .. winner.name .. ", Bid.")
 			end
+		elseif winner.choice == "Roll" then
+			say("Winner: " .. winner.name .. ", roll " .. roll .. ".")
 		else
 			say("Winner: " .. winner.name .. ", " .. winner.choice .. (roll ~= "" and (", roll " .. roll) or "") .. ".")
 		end
@@ -1166,6 +1181,7 @@ function SK.Session:LockRaid()
 	if SK.Teams then
 		SK.Teams:Flush()
 		filled = SK.Teams:MatchRaid()
+		SK.Teams:PullRaidIdentity()
 	end
 	local list = SK.Teams and SK.Teams:People() or SK.Saved:List()
 	for i = 1, #list do

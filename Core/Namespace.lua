@@ -1,7 +1,7 @@
 SK = SK or {}
 
 SK.TITLE = "Suicide Kings Forever"
-SK.VERSION = "0.3.6"
+SK.VERSION = "0.4.0"
 SK.PREFIX = "SKF1"
 
 SK.CLASSES = {
