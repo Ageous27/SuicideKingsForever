@@ -1,5 +1,3 @@
-![Suicide Kings Forever](docs/skf-minimap-crown-down-400.jpg)
-
 Suicide Kings Forever is a WoW Forever loot addon that keeps multiple Suicide Kings lists, reconciles who is in the raid, and runs timed rolls for the officer.
 
 ## Features
@@ -16,12 +14,6 @@ Suicide Kings Forever is a WoW Forever loot addon that keeps multiple Suicide Ki
 - List import and export
 - Gargul compatibility
 - A minimap button
-
-## Screenshots
-
-![Locked list](docs/list.png)
-
-![Rolls window and the raider popup](docs/rolls.png)
 
 ## Usage
 
